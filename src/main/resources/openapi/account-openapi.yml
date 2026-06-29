@@ -1,0 +1,208 @@
+openapi: 3.1.0
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: http://localhost:8082
+  description: Generated server url
+paths:
+  /accounts/{id}:
+    get:
+      tags:
+      - account-controller
+      operationId: getById
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/Account"
+    put:
+      tags:
+      - account-controller
+      operationId: update
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Account"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/Account"
+    delete:
+      tags:
+      - account-controller
+      operationId: delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /accounts:
+    get:
+      tags:
+      - account-controller
+      operationId: getAll
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Account"
+    post:
+      tags:
+      - account-controller
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Account"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/Account"
+  /accounts/{id}/withdraw:
+    post:
+      tags:
+      - account-controller
+      operationId: withdraw
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: amount
+        in: query
+        required: true
+        schema:
+          type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/Account"
+  /accounts/{id}/deposit:
+    post:
+      tags:
+      - account-controller
+      operationId: deposit
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: amount
+        in: query
+        required: true
+        schema:
+          type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/Account"
+  /movements/account/{accountId}:
+    get:
+      tags:
+      - movement-controller
+      operationId: getMovements
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Movement"
+components:
+  schemas:
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+        accountNumber:
+          type: string
+        customerId:
+          type: string
+        type:
+          type: string
+          enum:
+          - SAVINGS
+          - CHECKING
+          - FIXED_TERM
+        balance:
+          type: number
+        createdAt:
+          type: string
+          format: date
+        movementDay:
+          type: integer
+          format: int32
+        freeTransactions:
+          type: integer
+          format: int32
+        transactionCommission:
+          type: number
+    Movement:
+      type: object
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        movementType:
+          type: string
+          enum:
+          - DEPOSIT
+          - WITHDRAW
+        amount:
+          type: number
+        balanceAfterMovement:
+          type: number
+        movementDate:
+          type: string
+          format: date-time
