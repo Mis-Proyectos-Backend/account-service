@@ -28,4 +28,8 @@ public class Account {
     private BigDecimal balance;
 
     private LocalDate createdAt;
+
+    private Integer movementDay;
+    private Integer freeTransactions;
+    private BigDecimal transactionCommission;
 }
