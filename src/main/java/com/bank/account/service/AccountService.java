@@ -21,4 +21,10 @@ public interface AccountService {
     Mono<Account> withdraw(String id, BigDecimal amount);
 
     Mono<Void> delete(String id);
+
+    Mono<Void> transfer(String fromAccountId,
+                        String toAccountId,
+                        BigDecimal amount);
+
+    Flux<Account> getByCustomerId(String customerId);
 }

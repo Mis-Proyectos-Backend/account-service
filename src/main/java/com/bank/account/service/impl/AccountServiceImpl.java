@@ -205,4 +205,56 @@ public class AccountServiceImpl implements AccountService {
         }
         return Mono.empty();
     }
+
+    @Override
+    public Mono<Void> transfer(String fromAccountId,
+                               String toAccountId,
+                               BigDecimal amount) {
+
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Mono.error(new IllegalArgumentException("Amount must be greater than zero"));
+        }
+
+        Mono<Account> fromAccountMono = repository.findById(fromAccountId)
+                .switchIfEmpty(Mono.error(new RuntimeException("Source account not found")));
+
+        Mono<Account> toAccountMono = repository.findById(toAccountId)
+                .switchIfEmpty(Mono.error(new RuntimeException("Destination account not found")));
+
+        return Mono.zip(fromAccountMono, toAccountMono)
+                .flatMap(tuple -> {
+
+                    Account from = tuple.getT1();
+                    Account to = tuple.getT2();
+
+                    // validar saldo
+                    if (from.getBalance().compareTo(amount) < 0) {
+                        return Mono.error(new RuntimeException("Insufficient funds"));
+                    }
+
+                    // validar cuenta fija (regla existente)
+                    return validateFixedTermAccount(from)
+                            .then(validateFixedTermAccount(to))
+                            .then(Mono.just(tuple));
+                })
+                .flatMap(tuple -> {
+
+                    Account from = tuple.getT1();
+                    Account to = tuple.getT2();
+
+                    // actualizar balances
+                    from.setBalance(from.getBalance().subtract(amount));
+                    to.setBalance(to.getBalance().add(amount));
+
+                    return repository.save(from)
+                            .then(repository.save(to))
+                            .then(saveMovement(from, MovementType.WITHDRAW, amount))
+                            .then(saveMovement(to, MovementType.DEPOSIT, amount));
+                });
+    }
+
+    @Override
+    public Flux<Account> getByCustomerId(String customerId) {
+        return repository.findByCustomerId(customerId);
+    }
 }

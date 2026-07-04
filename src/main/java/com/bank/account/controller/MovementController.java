@@ -1,4 +1,4 @@
-package com.bank.account.config;
+package com.bank.account.controller;
 
 import com.bank.account.model.Movement;
 import com.bank.account.service.MovementService;
