@@ -1,19 +1,24 @@
 package com.bank.account.service.impl;
 
+import com.bank.account.client.CreditClient;
 import com.bank.account.client.CustomerClient;
 import com.bank.account.client.dto.Customer;
+import com.bank.account.config.AccountProperties;
 import com.bank.account.enums.AccountType;
+import com.bank.account.enums.CreditType;
+import com.bank.account.enums.CustomerProfile;
 import com.bank.account.enums.MovementType;
 import com.bank.account.model.Account;
 import com.bank.account.model.Movement;
 import com.bank.account.repository.AccountRepository;
-import com.bank.account.repository.MovementRepository;
 import com.bank.account.service.AccountService;
+import com.bank.account.service.MovementService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -24,78 +29,29 @@ public class AccountServiceImpl implements AccountService {
 
     private final AccountRepository repository;
     private final CustomerClient customerClient;
-    private final MovementRepository movementRepository;
+    private final CreditClient creditClient;
+    private final MovementService movementService;
+    private final AccountProperties accountProperties;
 
     public AccountServiceImpl(AccountRepository repository,
                               CustomerClient customerClient,
-                              MovementRepository movementRepository) {
+                              CreditClient creditClient,
+                              MovementService movementService,
+                              AccountProperties accountProperties) {
         this.repository = repository;
         this.customerClient = customerClient;
-        this.movementRepository = movementRepository;
+        this.creditClient = creditClient;
+        this.movementService = movementService;
+        this.accountProperties = accountProperties;
     }
+
+    /* ---------------- Public API (ordered) ---------------- */
 
     @Override
     public Mono<Account> create(Account account) {
         return customerClient.getCustomerById(account.getCustomerId())
-                .switchIfEmpty(Mono.error(
-                        new ResponseStatusException(
-                                HttpStatus.NOT_FOUND,
-                                "Customer not found")))
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not found")))
                 .flatMap(customer -> validateAndSave(customer, account));
-    }
-
-    private Mono<Account> validateAndSave(Customer customer, Account account) {
-
-        if (!customer.getCustomerType().equals("PERSONAL")
-                && !customer.getCustomerType().equals("BUSINESS")) {
-            return Mono.error(new RuntimeException("Invalid customer type"));
-        }
-        boolean isBusiness = "BUSINESS".equals(customer.getCustomerType());
-
-        if (!isBusiness) {
-            if (account.getType() == AccountType.FIXED_TERM) {
-
-                if (account.getMovementDay() == null
-                        || account.getMovementDay() < 1
-                        || account.getMovementDay() > 31) {
-
-                    return Mono.error(
-                            new RuntimeException("Movement day must be between 1 and 31"));
-                }
-                return saveAccount(account);
-            }
-            return repository.existsByCustomerIdAndType(
-                            account.getCustomerId(),
-                            account.getType())
-                    .flatMap(exists -> {
-
-                        if (exists) {
-                            return Mono.error(new RuntimeException(
-                                    "Customer already has this account type"));
-                        }
-
-                        return saveAccount(account);
-                    });
-
-        } else {
-
-            boolean invalidAccountType =
-                    account.getType() == AccountType.SAVINGS
-                            || account.getType() == AccountType.FIXED_TERM;
-
-            if (invalidAccountType) {
-                return Mono.error(new RuntimeException(
-                        "Business customers can only have CHECKING accounts"));
-            }
-
-            return saveAccount(account);
-        }
-    }
-
-    private Mono<Account> saveAccount(Account account) {
-        account.setCreatedAt(LocalDate.now());
-        account.setBalance(BigDecimal.ZERO);
-        return repository.save(account);
     }
 
     @Override
@@ -109,15 +65,16 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
+    public Flux<Account> getByCustomerId(String customerId) {
+        return repository.findByCustomerId(customerId);
+    }
+
+    @Override
     public Mono<Account> update(String id, Account account) {
-
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(
-                        new RuntimeException("Account not found")))
+                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
                 .flatMap(existingAccount -> {
-
                     existingAccount.setType(account.getType());
-
                     return repository.save(existingAccount);
                 });
     }
@@ -125,63 +82,198 @@ public class AccountServiceImpl implements AccountService {
     @Override
     public Mono<Account> deposit(String id, BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            return Mono.error(new IllegalArgumentException("Amount must be greater than zero"));
+            return Mono.error(new IllegalArgumentException("El importe debe ser mayor que cero."));
         }
+
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("Account not found")))
-                .flatMap(account ->
-                        validateFixedTermAccount(account)
-                                .then(Mono.just(account)))
+                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
+                .flatMap(account -> validateFixedTermAccount(account).then(Mono.just(account)))
+                .flatMap(this::applyTransactionCommission)
                 .flatMap(account -> {
                     account.setBalance(account.getBalance().add(amount));
                     return repository.save(account)
-                            .flatMap(savedAccount ->
-                                    saveMovement(
-                                            savedAccount,
-                                            MovementType.DEPOSIT,
-                                            amount)
-                                            .thenReturn(savedAccount));
+                            .flatMap(savedAccount -> saveMovement(savedAccount, MovementType.DEPOSIT, amount)
+                                    .thenReturn(savedAccount));
                 });
     }
 
     @Override
     public Mono<Account> withdraw(String id, BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            return Mono.error(new IllegalArgumentException("Amount must be greater than zero"));
+            return Mono.error(new IllegalArgumentException("El importe debe ser mayor que cero."));
         }
+
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("Account not found")))
-                .flatMap(account ->
-                        validateFixedTermAccount(account)
-                                .then(Mono.just(account)))
+                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
+                .flatMap(account -> validateFixedTermAccount(account).then(Mono.just(account)))
+                .flatMap(this::applyTransactionCommission)
                 .flatMap(account -> {
                     if (account.getBalance().compareTo(amount) < 0) {
-                        return Mono.error(new RuntimeException("Insufficient funds"));
+                        return Mono.error(new RuntimeException("Fondos insuficientes"));
                     }
 
                     account.setBalance(account.getBalance().subtract(amount));
                     return repository.save(account)
-                            .flatMap(savedAccount ->
-                                    saveMovement(
-                                            savedAccount,
-                                            MovementType.WITHDRAW,
-                                            amount)
-                                            .thenReturn(savedAccount));
+                            .flatMap(savedAccount -> saveMovement(savedAccount, MovementType.WITHDRAW, amount)
+                                    .thenReturn(savedAccount));
                 });
     }
 
     @Override
-    public Mono<Void> delete(String id) {
+    public Mono<Void> transfer(String fromAccountId, String toAccountId, BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Mono.error(new IllegalArgumentException("El importe debe ser mayor que cero."));
+        }
 
+        Mono<Account> fromAccountMono = repository.findById(fromAccountId)
+                .switchIfEmpty(Mono.error(new RuntimeException("No se encontró la cuenta de origen.")));
+
+        Mono<Account> toAccountMono = repository.findById(toAccountId)
+                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta de destino no encontrada")));
+
+        return Mono.zip(fromAccountMono, toAccountMono)
+                .flatMap(accounts -> validateTransfer(accounts, amount))
+                .flatMap(accounts -> executeTransfer(accounts, amount));
+    }
+
+    @Override
+    public Mono<Void> delete(String id) {
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(
-                        new RuntimeException("Account not found")))
+                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
                 .flatMap(account -> repository.delete(account));
     }
 
-    private Mono<Void> saveMovement(Account account,
-                                    MovementType movementType,
-                                    BigDecimal amount) {
+    /* ---------------- Private helpers (grouped) ---------------- */
+
+    // Save / validation helpers
+    private Mono<Account> validateAndSave(Customer customer, Account account) {
+        if (customer.getCustomerType() != com.bank.account.enums.CustomerType.PERSONAL && customer.getCustomerType() != com.bank.account.enums.CustomerType.BUSINESS) {
+            return Mono.error(new RuntimeException("Tipo de cliente no válido"));
+        }
+        boolean isBusiness = customer.getCustomerType() == com.bank.account.enums.CustomerType.BUSINESS;
+
+        if (!isBusiness) {
+            if (account.getType() == AccountType.FIXED_TERM) {
+                if (account.getMovementDay() == null || account.getMovementDay() < 1 || account.getMovementDay() > 31) {
+                    return Mono.error(new RuntimeException("El día del movimiento debe estar entre 1 y 31."));
+                }
+                return validateInitialBalance(account)
+                        .then(validateCustomerProfile(customer, account))
+                        .then(saveAccount(account));
+            }
+
+            return repository.existsByCustomerIdAndType(account.getCustomerId(), account.getType())
+                    .flatMap(exists -> {
+                        if (exists) {
+                            return Mono.error(new RuntimeException("El cliente ya tiene este tipo de cuenta"));
+                        }
+                        return validateInitialBalance(account)
+                                .then(validateCustomerProfile(customer, account))
+                                .then(saveAccount(account));
+                    });
+        } else {
+            boolean invalidAccountType = account.getType() == AccountType.SAVINGS || account.getType() == AccountType.FIXED_TERM;
+            if (invalidAccountType) {
+                return Mono.error(new RuntimeException("Los clientes empresariales solo pueden tener cuentas corrientes."));
+            }
+            return validateInitialBalance(account)
+                    .then(validateCustomerProfile(customer, account))
+                    .then(saveAccount(account));
+        }
+
+    }
+
+    private Mono<Void> validateInitialBalance(Account account) {
+        if (account.getBalance() == null) {
+            account.setBalance(BigDecimal.ZERO);
+        }
+        if (account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
+            return Mono.error(new RuntimeException("Initial balance cannot be negative"));
+        }
+        return Mono.empty();
+    }
+
+    private Mono<Account> saveAccount(Account account) {
+        initializeAccountConfiguration(account);
+        account.setCreatedAt(LocalDate.now());
+        return repository.save(account);
+    }
+
+    private void initializeAccountConfiguration(Account account) {
+
+        AccountProperties.AccountConfig config =
+                accountProperties.getByType(account.getType());
+
+        account.setFreeTransactions(config.getFreeTransactions());
+        account.setTransactionCommission(config.getTransactionCommission());
+    }
+
+    // Customer profile checks
+    private Mono<Void> validateCustomerProfile(Customer customer, Account account) {
+        if (customer.getCustomerProfile() == CustomerProfile.VIP) {
+            if (account.getType() != AccountType.SAVINGS) {
+                return Mono.error(new RuntimeException("Los clientes VIP solo pueden abrir cuentas de ahorro."));
+            }
+            return hasCreditCard(customer.getId())
+                    .flatMap(hasCard -> hasCard ? Mono.empty() : Mono.error(new RuntimeException("El cliente VIP debe tener una tarjeta de crédito.")));
+        }
+
+        if (customer.getCustomerProfile() == CustomerProfile.PYME) {
+            if (account.getType() != AccountType.CHECKING) {
+                return Mono.error(new RuntimeException("Los clientes PYME solo pueden abrir cuentas corrientes."));
+            }
+            account.setTransactionCommission(BigDecimal.ZERO);
+            return hasCreditCard(customer.getId())
+                    .flatMap(hasCard -> hasCard ? Mono.empty() : Mono.error(new RuntimeException("El cliente PYME debe tener una tarjeta de crédito.")));
+        }
+
+        return Mono.empty();
+    }
+
+    private Mono<Boolean> hasCreditCard(String customerId) {
+        return creditClient.getCreditsByCustomer(customerId)
+                .any(credit -> credit.getCreditType() == CreditType.CREDIT_CARD);
+    }
+
+    // Fixed-term account validation
+    private Mono<Void> validateFixedTermAccount(Account account) {
+        if (account.getType() != AccountType.FIXED_TERM) {
+            return Mono.empty();
+        }
+        int today = LocalDate.now().getDayOfMonth();
+        if (!Integer.valueOf(today).equals(account.getMovementDay())) {
+            return Mono.error(new RuntimeException("Las operaciones solo están permitidas durante el día " + account.getMovementDay()));
+        }
+        return Mono.empty();
+    }
+
+    // Transfer helpers
+    private Mono<Tuple2<Account, Account>> validateTransfer(Tuple2<Account, Account> accounts, BigDecimal amount) {
+        Account from = accounts.getT1();
+        Account to = accounts.getT2();
+        if (from.getBalance().compareTo(amount) < 0) {
+            return Mono.error(new RuntimeException("Fondos insuficientes en la cuenta de origen."));
+        }
+        return validateFixedTermAccount(from).then(validateFixedTermAccount(to)).thenReturn(accounts);
+    }
+
+
+    private Mono<Void> executeTransfer(Tuple2<Account, Account> accounts, BigDecimal amount) {
+        Account from = accounts.getT1();
+        Account to = accounts.getT2();
+        from.setBalance(from.getBalance().subtract(amount));
+        to.setBalance(to.getBalance().add(amount));
+
+        return repository.save(from)
+                .flatMap(savedFrom -> repository.save(to)
+                        .flatMap(savedTo -> Mono.when(
+                                saveMovement(savedFrom, MovementType.WITHDRAW, amount),
+                                saveMovement(savedTo, MovementType.DEPOSIT, amount)
+                        ))).then();
+    }
+
+    // Movements & commissions
+    private Mono<Void> saveMovement(Account account, MovementType movementType, BigDecimal amount) {
         Movement movement = Movement.builder()
                 .accountId(account.getId())
                 .movementType(movementType)
@@ -189,72 +281,23 @@ public class AccountServiceImpl implements AccountService {
                 .balanceAfterMovement(account.getBalance())
                 .movementDate(LocalDateTime.now())
                 .build();
-
-        return movementRepository.save(movement).then();
+        return movementService.save(movement).then();
     }
 
-    private Mono<Void> validateFixedTermAccount(Account account) {
-        if (account.getType() != AccountType.FIXED_TERM) {
-            return Mono.empty();
+    private Mono<Account> applyTransactionCommission(Account account) {
+        if (account.getFreeTransactions() == null || account.getTransactionCommission() == null) {
+            return Mono.just(account);
         }
-        int today = LocalDate.now().getDayOfMonth();
-
-        if (!Integer.valueOf(today).equals(account.getMovementDay())) {
-            return Mono.error(new RuntimeException(
-                    "Operations are only allowed on day " + account.getMovementDay()));
-        }
-        return Mono.empty();
-    }
-
-    @Override
-    public Mono<Void> transfer(String fromAccountId,
-                               String toAccountId,
-                               BigDecimal amount) {
-
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            return Mono.error(new IllegalArgumentException("Amount must be greater than zero"));
-        }
-
-        Mono<Account> fromAccountMono = repository.findById(fromAccountId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Source account not found")));
-
-        Mono<Account> toAccountMono = repository.findById(toAccountId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Destination account not found")));
-
-        return Mono.zip(fromAccountMono, toAccountMono)
-                .flatMap(tuple -> {
-
-                    Account from = tuple.getT1();
-                    Account to = tuple.getT2();
-
-                    // validar saldo
-                    if (from.getBalance().compareTo(amount) < 0) {
-                        return Mono.error(new RuntimeException("Insufficient funds"));
+        return movementService.countMovements(account.getId())
+                .flatMap(totalMovements -> {
+                    if (totalMovements >= account.getFreeTransactions()) {
+                        BigDecimal balanceAfterCommission = account.getBalance().subtract(account.getTransactionCommission());
+                        if (balanceAfterCommission.compareTo(BigDecimal.ZERO) < 0) {
+                            return Mono.error(new RuntimeException("Insufficient balance to pay transaction commission"));
+                        }
+                        account.setBalance(balanceAfterCommission);
                     }
-
-                    // validar cuenta fija (regla existente)
-                    return validateFixedTermAccount(from)
-                            .then(validateFixedTermAccount(to))
-                            .then(Mono.just(tuple));
-                })
-                .flatMap(tuple -> {
-
-                    Account from = tuple.getT1();
-                    Account to = tuple.getT2();
-
-                    // actualizar balances
-                    from.setBalance(from.getBalance().subtract(amount));
-                    to.setBalance(to.getBalance().add(amount));
-
-                    return repository.save(from)
-                            .then(repository.save(to))
-                            .then(saveMovement(from, MovementType.WITHDRAW, amount))
-                            .then(saveMovement(to, MovementType.DEPOSIT, amount));
+                    return Mono.just(account);
                 });
-    }
-
-    @Override
-    public Flux<Account> getByCustomerId(String customerId) {
-        return repository.findByCustomerId(customerId);
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
+
 @Service
 public class MovementServiceImpl implements MovementService {
 
@@ -24,5 +26,33 @@ public class MovementServiceImpl implements MovementService {
     @Override
     public Flux<Movement> findByAccount(String accountId) {
         return repository.findByAccountId(accountId);
+    }
+
+    @Override
+    public Mono<Long> countMovements(String accountId) {
+        return repository.countByAccountId(accountId);
+    }
+
+    @Override
+    public Flux<Movement> getLast10Movements(String accountId) {
+        return repository.findTop10ByAccountIdOrderByMovementDateDesc(accountId);
+    }
+
+    @Override
+    public Flux<Movement> findByAccountAndDateRange(
+            String accountId,
+            LocalDateTime startDate,
+            LocalDateTime endDate) {
+
+        return repository
+                .findByAccountIdAndMovementDateBetweenOrderByMovementDateDesc(
+                        accountId,
+                        startDate,
+                        endDate);
+    }
+
+    @Override
+    public Mono<Movement> findById(String id) {
+        return repository.findById(id);
     }
 }

@@ -1,0 +1,39 @@
+﻿[ERROR] COMPILATION ERROR : 
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[392,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[416,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[437,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[457,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[481,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[503,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[522,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[542,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[561,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[586,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[610,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[631,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[655,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[679,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[700,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.14.1:testCompile (default-testCompile) on project account-service: Compilation failure: Compilation failure: 
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[392,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[416,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[437,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[457,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[481,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[503,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[522,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[542,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[561,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[586,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[610,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[631,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[655,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[679,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] /C:/Boocamp/Proyecto/Parte1/account-service/src/test/java/com/bank/account/service/impl/AccountServiceImplTest.java:[700,31] incompatible types: java.lang.String cannot be converted to com.bank.account.enums.CustomerType
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

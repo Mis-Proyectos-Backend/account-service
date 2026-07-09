@@ -37,3 +37,17 @@ resilience4j:
     instances:
       customerService:
         baseConfig: default
+
+bank:
+  account:
+    savings:
+      free-transactions: 10
+      transaction-commission: 2.00
+
+    checking:
+      free-transactions: 20
+      transaction-commission: 3.00
+
+    fixed-term:
+      free-transactions: 1
+      transaction-commission: 5.00
