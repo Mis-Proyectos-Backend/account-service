@@ -13,6 +13,7 @@ import com.bank.account.repository.AccountRepository;
 import com.bank.account.service.AccountService;
 import com.bank.account.producer.AccountMovementProducer;
 import com.bank.account.event.AccountMovementEvent;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -33,18 +34,21 @@ public class AccountServiceImpl implements AccountService {
     private final CreditClient creditClient;
     private final AccountMovementProducer accountMovementProducer;
     private final AccountProperties accountProperties;
+    private final ReactiveRedisTemplate<String, Account> redisTemplate;
 
 
     public AccountServiceImpl(AccountRepository repository,
                               CustomerClient customerClient,
                               CreditClient creditClient,
                               AccountMovementProducer accountMovementProducer,
-                              AccountProperties accountProperties) {
+                              AccountProperties accountProperties,
+                              ReactiveRedisTemplate<String, Account> redisTemplate) {
         this.repository = repository;
         this.customerClient = customerClient;
         this.creditClient = creditClient;
         this.accountMovementProducer = accountMovementProducer;
         this.accountProperties = accountProperties;
+        this.redisTemplate = redisTemplate;
     }
 
     /* ---------------- Public API (ordered) ---------------- */
@@ -58,7 +62,22 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     public Mono<Account> getById(String id) {
-        return repository.findById(id);
+
+        String key = "account:" + id;
+
+        return redisTemplate.opsForValue()
+                .get(key)
+                .switchIfEmpty(
+                        repository.findById(id)
+                                .switchIfEmpty(
+                                        Mono.error(new RuntimeException("Cuenta no encontrada"))
+                                )
+                                .flatMap(account ->
+                                        redisTemplate.opsForValue()
+                                                .set(key, account)
+                                                .thenReturn(account)
+                                )
+                );
     }
 
     @Override
@@ -76,9 +95,15 @@ public class AccountServiceImpl implements AccountService {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
                 .flatMap(existingAccount -> {
+
                     existingAccount.setType(account.getType());
+
                     return repository.save(existingAccount);
-                });
+                })
+                .flatMap(saved ->
+                        redisTemplate.delete("account:" + saved.getId())
+                                .thenReturn(saved)
+                );
     }
 
     @Override
@@ -95,8 +120,11 @@ public class AccountServiceImpl implements AccountService {
                     account.setBalance(account.getBalance().add(amount));
                     account.setTransactionCount(account.getTransactionCount() + 1);
                     return repository.save(account)
-                            .flatMap(savedAccount -> saveMovement(savedAccount, MovementType.DEPOSIT, amount)
-                                    .thenReturn(savedAccount));
+                            .flatMap(savedAccount ->
+                                            saveMovement(savedAccount, MovementType.DEPOSIT, amount)
+                                                    .then(redisTemplate.delete("account:" + savedAccount.getId()))
+                                                    .thenReturn(savedAccount)
+                            );
                 });
     }
 
@@ -118,8 +146,11 @@ public class AccountServiceImpl implements AccountService {
                     account.setBalance(account.getBalance().subtract(amount));
                     account.setTransactionCount(account.getTransactionCount() + 1);
                     return repository.save(account)
-                            .flatMap(savedAccount -> saveMovement(savedAccount, MovementType.WITHDRAW, amount)
-                                    .thenReturn(savedAccount));
+                            .flatMap(savedAccount ->
+                                            saveMovement(savedAccount, MovementType.WITHDRAW, amount)
+                                                    .then(redisTemplate.delete("account:" + savedAccount.getId()))
+                                                    .thenReturn(savedAccount)
+                            );
                 });
     }
 
@@ -144,9 +175,12 @@ public class AccountServiceImpl implements AccountService {
     public Mono<Void> delete(String id) {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
-                .flatMap(repository::delete);
+                .flatMap(account ->
+                        repository.delete(account)
+                                .then(redisTemplate.delete("account:" + id))
+                                .then()
+                );
     }
-
     /* ---------------- Private helpers (grouped) ---------------- */
 
     // Save / validation helpers
@@ -198,10 +232,17 @@ public class AccountServiceImpl implements AccountService {
     }
 
     private Mono<Account> saveAccount(Account account) {
+
         initializeAccountConfiguration(account);
         account.setCreatedAt(LocalDate.now());
         account.setTransactionCount(0);
-        return repository.save(account);
+
+        return repository.save(account)
+                .flatMap(saved ->
+                        redisTemplate.opsForValue()
+                                .set("account:" + saved.getId(), saved)
+                                .thenReturn(saved)
+                );
     }
 
     private void initializeAccountConfiguration(Account account) {
@@ -269,7 +310,6 @@ public class AccountServiceImpl implements AccountService {
         from.setBalance(from.getBalance().subtract(amount));
         to.setBalance(to.getBalance().add(amount));
 
-        // incrementar movimientos
         from.setTransactionCount(from.getTransactionCount() + 1);
         to.setTransactionCount(to.getTransactionCount() + 1);
 
@@ -278,7 +318,13 @@ public class AccountServiceImpl implements AccountService {
                         .flatMap(savedTo -> Mono.when(
                                 saveMovement(savedFrom, MovementType.WITHDRAW, amount),
                                 saveMovement(savedTo, MovementType.DEPOSIT, amount)
-                        ))).then();
+                        ).then(
+                                Mono.when(
+                                        redisTemplate.delete("account:" + savedFrom.getId()),
+                                        redisTemplate.delete("account:" + savedTo.getId())
+                                )
+                        ))
+                ).then();
     }
 
     // Movements & commissions

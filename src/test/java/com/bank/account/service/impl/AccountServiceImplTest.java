@@ -18,6 +18,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.core.ReactiveValueOperations;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -55,9 +57,13 @@ class AccountServiceImplTest {
     @Mock
     AccountProperties.AccountConfig accountConfig;
 
+    @Mock
+    ReactiveRedisTemplate<String, Account> redisTemplate;
+
+    @Mock
+    ReactiveValueOperations<String, Account> valueOperations;
 
     private AccountServiceImpl service;
-
 
 
     @BeforeEach
@@ -68,7 +74,8 @@ class AccountServiceImplTest {
                 customerClient,
                 creditClient,
                 movementProducer,
-                accountProperties
+                accountProperties,
+                redisTemplate
         );
 
 
@@ -89,6 +96,22 @@ class AccountServiceImplTest {
 
         lenient()
                 .when(movementProducer.send(any(AccountMovementEvent.class)))
+                .thenReturn(Mono.empty());
+
+        lenient()
+                .when(redisTemplate.opsForValue())
+                .thenReturn(valueOperations);
+
+        lenient()
+                .when(valueOperations.set(anyString(), any(Account.class)))
+                .thenReturn(Mono.just(true));
+
+        lenient()
+                .when(redisTemplate.delete(anyString()))
+                .thenReturn(Mono.just(1L));
+
+        lenient()
+                .when(valueOperations.get(anyString()))
                 .thenReturn(Mono.empty());
     }
 
@@ -780,68 +803,66 @@ class AccountServiceImplTest {
 
     @Test
     void getById_whenAccountExists_shouldReturnAccount() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
                         .build();
-
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
 
+        when(valueOperations.get("account:a1"))
+                .thenReturn(Mono.empty());
 
+        StepVerifier.create(service.getById("a1"))
+                .expectNext(account)
+                .verifyComplete();
+    }
+
+    @Test
+    void getById_shouldReturnAccountFromCache() {
+        Account account = Account.builder()
+                .id("a1")
+                .build();
+
+        when(valueOperations.get("account:a1"))
+                .thenReturn(Mono.just(account));
+        // Necesario porque switchIfEmpty recibe este Mono ya construido
+        when(repository.findById("a1"))
+                .thenReturn(Mono.empty());
 
         StepVerifier.create(service.getById("a1"))
                 .expectNext(account)
                 .verifyComplete();
 
+        verify(valueOperations).get("account:a1");
     }
-
-
-
 
     @Test
-    void getById_whenAccountNotFound_shouldReturnEmpty() {
-
-
+    void getById_whenAccountNotFound_shouldThrowException() {
+        when(valueOperations.get("account:a1"))
+                .thenReturn(Mono.empty());
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
-
-
-
         StepVerifier.create(service.getById("a1"))
-                .verifyComplete();
-
+                .expectErrorMatches(ex ->
+                        ex instanceof RuntimeException &&
+                                ex.getMessage().equals("Cuenta no encontrada"))
+                .verify();
     }
-
-
-
-
 
     @Test
     void getAll_shouldReturnAccounts() {
-
-
         Account account1 =
                 Account.builder()
                         .id("a1")
                         .build();
-
-
         Account account2 =
                 Account.builder()
                         .id("a2")
                         .build();
 
-
-
         when(repository.findAll())
                 .thenReturn(Flux.just(account1, account2));
-
-
 
         StepVerifier.create(service.getAll())
                 .expectNext(account1)
@@ -897,13 +918,8 @@ class AccountServiceImplTest {
 
     @Test
     void update_whenAccountNotFound_shouldFail() {
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
-
-
-
         StepVerifier.create(
                         service.update(
                                 "a1",
@@ -912,12 +928,7 @@ class AccountServiceImplTest {
                 )
                 .expectError()
                 .verify();
-
     }
-
-
-
-
 
 
     @Test
