@@ -32,6 +32,7 @@ public class Account {
     private Integer movementDay;
     private Integer freeTransactions;
     private BigDecimal transactionCommission;
+    private Integer transactionCount;
 }
 
 

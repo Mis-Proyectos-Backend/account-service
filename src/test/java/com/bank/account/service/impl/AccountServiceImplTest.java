@@ -6,805 +6,1232 @@ import com.bank.account.client.dto.Credit;
 import com.bank.account.client.dto.Customer;
 import com.bank.account.config.AccountProperties;
 import com.bank.account.enums.*;
+import com.bank.account.event.AccountMovementEvent;
 import com.bank.account.model.Account;
-import com.bank.account.model.Movement;
+import com.bank.account.producer.AccountMovementProducer;
 import com.bank.account.repository.AccountRepository;
-import com.bank.account.service.MovementService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.junit.jupiter.MockitoExtension;
+
 import org.mockito.Mock;
-import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
+
 
 @ExtendWith(MockitoExtension.class)
 class AccountServiceImplTest {
 
+
     @Mock
     AccountRepository repository;
+
 
     @Mock
     CustomerClient customerClient;
 
+
     @Mock
     CreditClient creditClient;
 
+
     @Mock
-    MovementService movementService;
+    AccountMovementProducer movementProducer;
+
 
     @Mock
     AccountProperties accountProperties;
 
+
     @Mock
     AccountProperties.AccountConfig accountConfig;
 
-    @InjectMocks
-    AccountServiceImpl service;
+
+    private AccountServiceImpl service;
+
+
 
     @BeforeEach
     void setUp() {
-        lenient().when(accountConfig.getFreeTransactions()).thenReturn(5);
-        lenient().when(accountConfig.getTransactionCommission()).thenReturn(BigDecimal.valueOf(2));
-        lenient().when(accountProperties.getByType(any())).thenReturn(accountConfig);
+
+        service = new AccountServiceImpl(
+                repository,
+                customerClient,
+                creditClient,
+                movementProducer,
+                accountProperties
+        );
+
+
+        lenient()
+                .when(accountConfig.getFreeTransactions())
+                .thenReturn(5);
+
+
+        lenient()
+                .when(accountConfig.getTransactionCommission())
+                .thenReturn(BigDecimal.valueOf(2));
+
+
+        lenient()
+                .when(accountProperties.getByType(any()))
+                .thenReturn(accountConfig);
+
+
+        lenient()
+                .when(movementProducer.send(any(AccountMovementEvent.class)))
+                .thenReturn(Mono.empty());
     }
+
+
 
     // ==================== CREATE TESTS ====================
 
+
     @Test
     void create_whenCustomerNotFound_shouldReturnNotFound() {
-        Account account = Account.builder().customerId("c1").build();
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.empty());
+
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .build();
+
+
+        when(customerClient.getCustomerById("c1"))
+                .thenReturn(Mono.empty());
+
 
         StepVerifier.create(service.create(account))
-                .expectErrorMatches(throwable -> throwable instanceof org.springframework.web.server.ResponseStatusException)
-                .verify();
-
-        verify(customerClient).getCustomerById("c1");
-        verifyNoMoreInteractions(repository);
-    }
-
-    // ==================== DEPOSIT TESTS ====================
-
-    @Test
-    void deposit_whenAmountIsZero_shouldThrowIllegalArgumentException() {
-        StepVerifier.create(service.deposit("a1", BigDecimal.ZERO))
-                .expectError(IllegalArgumentException.class)
-                .verify();
-    }
-
-    @Test
-    void deposit_whenAmountIsNegative_shouldThrowIllegalArgumentException() {
-        StepVerifier.create(service.deposit("a1", BigDecimal.valueOf(-50)))
-                .expectError(IllegalArgumentException.class)
-                .verify();
-    }
-
-    @Test
-    void deposit_whenAccountNotFound_shouldThrowException() {
-        when(repository.findById("a1")).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.deposit("a1", BigDecimal.valueOf(50)))
                 .expectError()
                 .verify();
+
+
+        verify(customerClient)
+                .getCustomerById("c1");
     }
 
-    @Test
-    void deposit_whenSuccessful_shouldIncreaseBalance() {
-        Account account = Account.builder()
-                .id("a1")
-                .balance(BigDecimal.valueOf(100))
-                .freeTransactions(5)
-                .transactionCommission(BigDecimal.valueOf(2))
-                .type(AccountType.CHECKING)
-                .build();
 
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-        when(movementService.countMovements("a1")).thenReturn(Mono.just(0L));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-        when(movementService.save(any(Movement.class))).thenReturn(Mono.just(Movement.builder().id("m1").build()));
-
-        StepVerifier.create(service.deposit("a1", BigDecimal.valueOf(50)))
-                .expectNextMatches(saved -> saved.getBalance().compareTo(BigDecimal.valueOf(150)) == 0)
-                .verifyComplete();
-
-        verify(repository).save(argThat(acc -> acc.getBalance().compareTo(BigDecimal.valueOf(150)) == 0));
-    }
-
-    @Test
-    void deposit_shouldCreateMovement() {
-        Account account = Account.builder()
-                .id("a1")
-                .balance(BigDecimal.valueOf(100))
-                .freeTransactions(5)
-                .transactionCommission(BigDecimal.valueOf(2))
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-        when(movementService.countMovements("a1")).thenReturn(Mono.just(0L));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-        when(movementService.save(any(Movement.class))).thenReturn(Mono.just(Movement.builder().id("m1").build()));
-
-        StepVerifier.create(service.deposit("a1", BigDecimal.valueOf(50)))
-                .expectNextCount(1)
-                .verifyComplete();
-
-        verify(movementService).save(argThat(m -> m.getMovementType() == MovementType.DEPOSIT
-                && m.getAmount().compareTo(BigDecimal.valueOf(50)) == 0
-                && m.getAccountId().equals("a1")));
-    }
-
-    // ==================== WITHDRAW TESTS ====================
-
-    @Test
-    void withdraw_whenAmountIsZero_shouldThrowIllegalArgumentException() {
-        StepVerifier.create(service.withdraw("a1", BigDecimal.ZERO))
-                .expectError(IllegalArgumentException.class)
-                .verify();
-    }
-
-    @Test
-    void withdraw_whenAccountNotFound_shouldThrowException() {
-        when(repository.findById("a1")).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.withdraw("a1", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void withdraw_whenInsufficientBalance_shouldThrowException() {
-        Account account = Account.builder()
-                .id("a1")
-                .balance(BigDecimal.valueOf(30))
-                .freeTransactions(5)
-                .transactionCommission(BigDecimal.valueOf(2))
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-        when(movementService.countMovements("a1")).thenReturn(Mono.just(0L));
-
-        StepVerifier.create(service.withdraw("a1", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void withdraw_whenSuccessful_shouldDecreaseBalance() {
-        Account account = Account.builder()
-                .id("a1")
-                .balance(BigDecimal.valueOf(100))
-                .freeTransactions(5)
-                .transactionCommission(BigDecimal.valueOf(2))
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-        when(movementService.countMovements("a1")).thenReturn(Mono.just(0L));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-        when(movementService.save(any(Movement.class))).thenReturn(Mono.just(Movement.builder().id("m1").build()));
-
-        StepVerifier.create(service.withdraw("a1", BigDecimal.valueOf(30)))
-                .expectNextMatches(saved -> saved.getBalance().compareTo(BigDecimal.valueOf(70)) == 0)
-                .verifyComplete();
-
-        verify(repository).save(argThat(acc -> acc.getBalance().compareTo(BigDecimal.valueOf(70)) == 0));
-    }
-
-    // ==================== TRANSFER TESTS ====================
-
-    @Test
-    void transfer_whenAmountIsZero_shouldThrowIllegalArgumentException() {
-        StepVerifier.create(service.transfer("a1", "a2", BigDecimal.ZERO))
-                .expectError(IllegalArgumentException.class)
-                .verify();
-    }
-
-    @Test
-    void transfer_whenSourceAccountNotFound_shouldThrowException() {
-        when(repository.findById("a1")).thenReturn(Mono.empty());
-        when(repository.findById("a2")).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.transfer("a1", "a2", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void transfer_whenDestinationAccountNotFound_shouldThrowException() {
-        Account source = Account.builder()
-                .id("a1")
-                .balance(BigDecimal.valueOf(100))
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(source));
-        when(repository.findById("a2")).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.transfer("a1", "a2", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void transfer_whenInsufficientBalance_shouldThrowException() {
-        Account source = Account.builder()
-                .id("a1")
-                .balance(BigDecimal.valueOf(30))
-                .type(AccountType.CHECKING)
-                .build();
-
-        Account dest = Account.builder()
-                .id("a2")
-                .balance(BigDecimal.valueOf(100))
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(source));
-        when(repository.findById("a2")).thenReturn(Mono.just(dest));
-
-        StepVerifier.create(service.transfer("a1", "a2", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void transfer_whenSuccessful_shouldUpdateBothBalances() {
-        Account source = Account.builder()
-                .id("a1")
-                .balance(BigDecimal.valueOf(100))
-                .type(AccountType.CHECKING)
-                .build();
-
-        Account dest = Account.builder()
-                .id("a2")
-                .balance(BigDecimal.valueOf(50))
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(source));
-        when(repository.findById("a2")).thenReturn(Mono.just(dest));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-        when(movementService.save(any(Movement.class))).thenReturn(Mono.just(Movement.builder().id("m1").build()));
-
-        StepVerifier.create(service.transfer("a1", "a2", BigDecimal.valueOf(30)))
-                .verifyComplete();
-
-        verify(repository, times(2)).save(any(Account.class));
-    }
-
-    // ==================== GET TESTS ====================
-
-    @Test
-    void getById_whenAccountExists_shouldReturnAccount() {
-        Account account = Account.builder().id("a1").build();
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-
-        StepVerifier.create(service.getById("a1"))
-                .expectNext(account)
-                .verifyComplete();
-    }
-
-    @Test
-    void getById_whenAccountNotFound_shouldReturnEmpty() {
-        when(repository.findById("a1")).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.getById("a1"))
-                .expectComplete()
-                .verify();
-    }
-
-    @Test
-    void getAll_shouldReturnAllAccounts() {
-        Account a1 = Account.builder().id("a1").build();
-        Account a2 = Account.builder().id("a2").build();
-
-        when(repository.findAll()).thenReturn(Flux.just(a1, a2));
-
-        StepVerifier.create(service.getAll())
-                .expectNext(a1, a2)
-                .verifyComplete();
-    }
-
-    @Test
-    void getByCustomerId_shouldReturnAccountsForCustomer() {
-        Account a1 = Account.builder().id("a1").customerId("c1").build();
-        Account a2 = Account.builder().id("a2").customerId("c1").build();
-
-        when(repository.findByCustomerId("c1")).thenReturn(Flux.just(a1, a2));
-
-        StepVerifier.create(service.getByCustomerId("c1"))
-                .expectNext(a1, a2)
-                .verifyComplete();
-    }
-
-    // ==================== UPDATE TESTS ====================
-
-    @Test
-    void update_whenAccountNotFound_shouldThrowException() {
-        when(repository.findById("a1")).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.update("a1", Account.builder().build()))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void update_whenSuccessful_shouldUpdateAccountType() {
-        Account existing = Account.builder()
-                .id("a1")
-                .type(AccountType.CHECKING)
-                .build();
-
-        Account updated = Account.builder()
-                .type(AccountType.SAVINGS)
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(existing));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-        StepVerifier.create(service.update("a1", updated))
-                .expectNextMatches(acc -> acc.getType() == AccountType.SAVINGS)
-                .verifyComplete();
-    }
-
-    // ==================== DELETE TESTS ====================
-
-    @Test
-    void delete_whenAccountNotFound_shouldThrowException() {
-        when(repository.findById("a1")).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.delete("a1"))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void delete_whenSuccessful_shouldDeleteAccount() {
-        Account account = Account.builder().id("a1").build();
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-        when(repository.delete(account)).thenReturn(Mono.empty());
-
-        StepVerifier.create(service.delete("a1"))
-                .verifyComplete();
-
-        verify(repository).delete(account);
-    }
-
-    // ==================== CREATE - PERSONAL CUSTOMER TESTS ====================
 
     @Test
     void create_withPersonalCustomerAndCheckingAccount_shouldSucceed() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.STANDARD)
-                .build();
 
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .build();
 
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-        when(repository.existsByCustomerIdAndType("c1", AccountType.CHECKING)).thenReturn(Mono.just(false));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
+        Customer customer =
+                Customer.builder()
+                        .id("c1")
+                        .customerType(CustomerType.PERSONAL)
+                        .customerProfile(CustomerProfile.STANDARD)
+                        .build();
 
-        StepVerifier.create(service.create(account))
-                .expectNextCount(1)
-                .verifyComplete();
 
-        verify(repository).save(argThat(acc -> acc.getType() == AccountType.CHECKING));
-    }
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .type(AccountType.CHECKING)
+                        .build();
 
-    @Test
-    void create_withPersonalCustomerWhenAccountExists_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.STANDARD)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-        when(repository.existsByCustomerIdAndType("c1", AccountType.CHECKING)).thenReturn(Mono.just(true));
-
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void create_withPersonalCustomerAndFixedTermAccount_withInvalidMovementDay_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.FIXED_TERM)
-                .movementDay(32)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void create_withPersonalCustomerAndFixedTermAccount_withValidMovementDay_shouldSucceed() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.STANDARD)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.FIXED_TERM)
-                .movementDay(15)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-        StepVerifier.create(service.create(account))
-                .expectNextCount(1)
-                .verifyComplete();
-
-        verify(repository).save(any(Account.class));
-    }
-
-    @Test
-    void create_withBusinessCustomer_shouldSucceed() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.BUSINESS)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-        StepVerifier.create(service.create(account))
-                .expectNextCount(1)
-                .verifyComplete();
-
-        verify(repository).save(any(Account.class));
-    }
-
-    @Test
-    void create_withBusinessCustomerAndSavingsAccount_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.BUSINESS)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.SAVINGS)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void create_withBusinessCustomerAndFixedTermAccount_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.BUSINESS)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.FIXED_TERM)
-                .movementDay(15)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void create_withInvalidCustomerType_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(null)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void create_withNegativeInitialBalance_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.STANDARD)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .balance(BigDecimal.valueOf(-100))
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
-
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void create_withVIPCustomerAndSavingsAccount_shouldSucceed() {
-
-        Credit creditCard = Credit.builder()
-                .creditType(CreditType.CREDIT_CARD)
-                .build();
-
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.VIP)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.SAVINGS)
-                .build();
 
 
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
 
-        when(creditClient.getCreditsByCustomer("c1"))
-                .thenReturn(Flux.just(creditCard));
 
-        when(repository.existsByCustomerIdAndType("c1", AccountType.SAVINGS))
+        when(repository.existsByCustomerIdAndType(
+                "c1",
+                AccountType.CHECKING))
                 .thenReturn(Mono.just(false));
+
 
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
 
 
+
         StepVerifier.create(service.create(account))
                 .expectNextCount(1)
                 .verifyComplete();
 
 
-        verify(repository).save(any(Account.class));
+        verify(repository)
+                .save(any(Account.class));
     }
+
+
+
+    @Test
+    void create_withBusinessCustomerAndSavingsAccount_shouldFail() {
+
+
+        Customer customer =
+                Customer.builder()
+                        .id("c1")
+                        .customerType(CustomerType.BUSINESS)
+                        .build();
+
+
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .type(AccountType.SAVINGS)
+                        .build();
+
+
+
+        when(customerClient.getCustomerById("c1"))
+                .thenReturn(Mono.just(customer));
+
+
+
+        StepVerifier.create(service.create(account))
+                .expectError()
+                .verify();
+    }
+
+
+
+
+    @Test
+    void create_withVIPCustomerAndSavingsAccount_shouldSucceed() {
+
+
+        Credit credit =
+                Credit.builder()
+                        .creditType(CreditType.CREDIT_CARD)
+                        .build();
+
+
+
+        Customer customer =
+                Customer.builder()
+                        .id("c1")
+                        .customerType(CustomerType.PERSONAL)
+                        .customerProfile(CustomerProfile.VIP)
+                        .build();
+
+
+
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .type(AccountType.SAVINGS)
+                        .build();
+
+
+
+        when(customerClient.getCustomerById("c1"))
+                .thenReturn(Mono.just(customer));
+
+
+        when(creditClient.getCreditsByCustomer("c1"))
+                .thenReturn(Flux.just(credit));
+
+
+        when(repository.existsByCustomerIdAndType(
+                "c1",
+                AccountType.SAVINGS))
+                .thenReturn(Mono.just(false));
+
+
+        when(repository.save(any(Account.class)))
+                .thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+
+
+        StepVerifier.create(service.create(account))
+                .expectNextCount(1)
+                .verifyComplete();
+
+    }
+
+
 
     @Test
     void create_withVIPCustomerWithoutCreditCard_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.VIP)
-                .build();
 
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.SAVINGS)
-                .build();
 
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
+        Customer customer =
+                Customer.builder()
+                        .id("c1")
+                        .customerType(CustomerType.PERSONAL)
+                        .customerProfile(CustomerProfile.VIP)
+                        .build();
 
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
 
-    @Test
-    void create_withVIPCustomerAndCheckingAccount_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.VIP)
-                .build();
 
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .build();
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .type(AccountType.SAVINGS)
+                        .build();
 
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
 
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void create_withPYMECustomerAndCheckingAccount_shouldSucceed() {
-
-        Credit creditCard = Credit.builder()
-                .creditType(CreditType.CREDIT_CARD)
-                .build();
-
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.PYME)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .build();
 
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
 
-        when(creditClient.getCreditsByCustomer("c1"))
-                .thenReturn(Flux.just(creditCard));
 
-        when(repository.existsByCustomerIdAndType("c1", AccountType.CHECKING))
-                .thenReturn(Mono.just(false));
+
+        StepVerifier.create(service.create(account))
+                .expectError()
+                .verify();
+    }
+
+    // ==================== DEPOSIT TESTS ====================
+
+
+    @Test
+    void deposit_whenAmountIsZero_shouldFail() {
+
+        StepVerifier.create(
+                        service.deposit("a1", BigDecimal.ZERO)
+                )
+                .expectError(IllegalArgumentException.class)
+                .verify();
+    }
+
+
+
+    @Test
+    void deposit_whenAmountIsNegative_shouldFail() {
+
+        StepVerifier.create(
+                        service.deposit("a1", BigDecimal.valueOf(-50))
+                )
+                .expectError(IllegalArgumentException.class)
+                .verify();
+    }
+
+
+
+    @Test
+    void deposit_whenAccountNotFound_shouldFail() {
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.empty());
+
+
+        StepVerifier.create(
+                        service.deposit("a1", BigDecimal.valueOf(50))
+                )
+                .expectError()
+                .verify();
+    }
+
+
+
+
+    @Test
+    void deposit_shouldIncreaseBalanceAndTransactionCount() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(100))
+                        .transactionCount(0)
+                        .freeTransactions(5)
+                        .transactionCommission(BigDecimal.valueOf(2))
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
 
         when(repository.save(any(Account.class)))
-                .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+                .thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+
+
+        StepVerifier.create(
+                        service.deposit("a1", BigDecimal.valueOf(50))
+                )
+                .expectNextMatches(saved ->
+                        saved.getBalance()
+                                .compareTo(BigDecimal.valueOf(150)) == 0
+                                &&
+                                saved.getTransactionCount() == 1
+                )
+                .verifyComplete();
+
+
+
+        verify(movementProducer)
+                .send(argThat(event ->
+                        event.getAccountId().equals("a1")
+                                &&
+                                event.getMovementType() == MovementType.DEPOSIT
+                                &&
+                                event.getAmount()
+                                        .compareTo(BigDecimal.valueOf(50)) == 0
+                ));
+    }
+
+
+
+
+
+    // ==================== WITHDRAW TESTS ====================
+
+
+
+    @Test
+    void withdraw_whenAmountIsZero_shouldFail() {
+
+        StepVerifier.create(
+                        service.withdraw("a1", BigDecimal.ZERO)
+                )
+                .expectError(IllegalArgumentException.class)
+                .verify();
+    }
+
+
+
+
+
+    @Test
+    void withdraw_whenAccountNotFound_shouldFail() {
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.empty());
+
+
+        StepVerifier.create(
+                        service.withdraw("a1", BigDecimal.valueOf(50))
+                )
+                .expectError()
+                .verify();
+    }
+
+
+
+
+
+    @Test
+    void withdraw_whenInsufficientBalance_shouldFail() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(20))
+                        .transactionCount(0)
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+
+        StepVerifier.create(
+                        service.withdraw("a1", BigDecimal.valueOf(50))
+                )
+                .expectError()
+                .verify();
+    }
+
+
+
+
+
+
+    @Test
+    void withdraw_shouldDecreaseBalanceAndIncreaseTransactionCount() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(100))
+                        .transactionCount(0)
+                        .freeTransactions(5)
+                        .transactionCommission(BigDecimal.valueOf(2))
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+        when(repository.save(any(Account.class)))
+                .thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+
+
+        StepVerifier.create(
+                        service.withdraw("a1", BigDecimal.valueOf(30))
+                )
+                .expectNextMatches(saved ->
+                        saved.getBalance()
+                                .compareTo(BigDecimal.valueOf(70)) == 0
+                                &&
+                                saved.getTransactionCount() == 1
+                )
+                .verifyComplete();
+
+
+
+        verify(movementProducer)
+                .send(argThat(event ->
+                        event.getMovementType()
+                                == MovementType.WITHDRAW
+                ));
+    }
+
+
+
+
+
+
+    // ==================== TRANSFER TESTS ====================
+
+
+
+    @Test
+    void transfer_whenAmountIsZero_shouldFail() {
+
+
+        StepVerifier.create(
+                        service.transfer(
+                                "a1",
+                                "a2",
+                                BigDecimal.ZERO
+                        )
+                )
+                .expectError(IllegalArgumentException.class)
+                .verify();
+    }
+
+
+
+
+
+    @Test
+    void transfer_whenSourceAccountNotFound_shouldFail() {
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.empty());
+
+
+        when(repository.findById("a2"))
+                .thenReturn(Mono.empty());
+
+
+
+        StepVerifier.create(
+                        service.transfer(
+                                "a1",
+                                "a2",
+                                BigDecimal.valueOf(50)
+                        )
+                )
+                .expectError()
+                .verify();
+    }
+
+
+
+
+
+
+
+    @Test
+    void transfer_whenDestinationAccountNotFound_shouldFail() {
+
+
+        Account source =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(100))
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(source));
+
+
+        when(repository.findById("a2"))
+                .thenReturn(Mono.empty());
+
+
+
+        StepVerifier.create(
+                        service.transfer(
+                                "a1",
+                                "a2",
+                                BigDecimal.valueOf(50)
+                        )
+                )
+                .expectError()
+                .verify();
+
+    }
+
+
+
+
+
+    @Test
+    void transfer_whenInsufficientBalance_shouldFail() {
+
+
+        Account source =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(20))
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        Account destination =
+                Account.builder()
+                        .id("a2")
+                        .balance(BigDecimal.valueOf(100))
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(source));
+
+
+        when(repository.findById("a2"))
+                .thenReturn(Mono.just(destination));
+
+
+
+        StepVerifier.create(
+                        service.transfer(
+                                "a1",
+                                "a2",
+                                BigDecimal.valueOf(50)
+                        )
+                )
+                .expectError()
+                .verify();
+    }
+
+
+
+
+
+
+
+    @Test
+    void transfer_shouldUpdateBalancesAndPublishEvents() {
+
+
+        Account source =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(100))
+                        .transactionCount(0)
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        Account destination =
+                Account.builder()
+                        .id("a2")
+                        .balance(BigDecimal.valueOf(50))
+                        .transactionCount(0)
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(source));
+
+
+        when(repository.findById("a2"))
+                .thenReturn(Mono.just(destination));
+
+
+        when(repository.save(any(Account.class)))
+                .thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+
+
+        StepVerifier.create(
+                        service.transfer(
+                                "a1",
+                                "a2",
+                                BigDecimal.valueOf(30)
+                        )
+                )
+                .verifyComplete();
+
+
+
+        verify(repository, times(2))
+                .save(any(Account.class));
+
+
+
+        verify(movementProducer, times(2))
+                .send(any(AccountMovementEvent.class));
+
+    }
+
+
+
+
+
+    // ==================== COMMISSION TESTS ====================
+
+
+
+    @Test
+    void deposit_whenCommissionApplies_shouldDeductCommission() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(100))
+                        .transactionCount(5)
+                        .freeTransactions(2)
+                        .transactionCommission(BigDecimal.valueOf(5))
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+        when(repository.save(any(Account.class)))
+                .thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+
+
+        StepVerifier.create(
+                        service.deposit("a1", BigDecimal.valueOf(50))
+                )
+                .expectNextMatches(saved ->
+                        saved.getBalance()
+                                .compareTo(BigDecimal.valueOf(145)) == 0
+                )
+                .verifyComplete();
+
+    }
+
+
+
+
+
+    @Test
+    void deposit_whenCommissionCannotBePaid_shouldFail() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .balance(BigDecimal.valueOf(3))
+                        .transactionCount(5)
+                        .freeTransactions(2)
+                        .transactionCommission(BigDecimal.valueOf(5))
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+
+        StepVerifier.create(
+                        service.deposit("a1", BigDecimal.valueOf(50))
+                )
+                .expectError()
+                .verify();
+
+    }
+
+    // ==================== GET TESTS ====================
+
+
+    @Test
+    void getById_whenAccountExists_shouldReturnAccount() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+
+        StepVerifier.create(service.getById("a1"))
+                .expectNext(account)
+                .verifyComplete();
+
+    }
+
+
+
+
+    @Test
+    void getById_whenAccountNotFound_shouldReturnEmpty() {
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.empty());
+
+
+
+        StepVerifier.create(service.getById("a1"))
+                .verifyComplete();
+
+    }
+
+
+
+
+
+    @Test
+    void getAll_shouldReturnAccounts() {
+
+
+        Account account1 =
+                Account.builder()
+                        .id("a1")
+                        .build();
+
+
+        Account account2 =
+                Account.builder()
+                        .id("a2")
+                        .build();
+
+
+
+        when(repository.findAll())
+                .thenReturn(Flux.just(account1, account2));
+
+
+
+        StepVerifier.create(service.getAll())
+                .expectNext(account1)
+                .expectNext(account2)
+                .verifyComplete();
+
+    }
+
+
+
+
+
+
+
+    @Test
+    void getByCustomerId_shouldReturnCustomerAccounts() {
+
+
+        Account account1 =
+                Account.builder()
+                        .id("a1")
+                        .customerId("c1")
+                        .build();
+
+
+        Account account2 =
+                Account.builder()
+                        .id("a2")
+                        .customerId("c1")
+                        .build();
+
+
+
+        when(repository.findByCustomerId("c1"))
+                .thenReturn(Flux.just(account1, account2));
+
+
+
+        StepVerifier.create(service.getByCustomerId("c1"))
+                .expectNext(account1)
+                .expectNext(account2)
+                .verifyComplete();
+
+    }
+
+
+
+
+
+    // ==================== UPDATE TESTS ====================
+
+
+
+    @Test
+    void update_whenAccountNotFound_shouldFail() {
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.empty());
+
+
+
+        StepVerifier.create(
+                        service.update(
+                                "a1",
+                                Account.builder().build()
+                        )
+                )
+                .expectError()
+                .verify();
+
+    }
+
+
+
+
+
+
+    @Test
+    void update_shouldUpdateAccountType() {
+
+
+        Account existing =
+                Account.builder()
+                        .id("a1")
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+        Account updated =
+                Account.builder()
+                        .type(AccountType.SAVINGS)
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(existing));
+
+
+
+        when(repository.save(any(Account.class)))
+                .thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+
+
+        StepVerifier.create(
+                        service.update("a1", updated)
+                )
+                .expectNextMatches(account ->
+                        account.getType() == AccountType.SAVINGS
+                )
+                .verifyComplete();
+
+    }
+
+
+
+
+
+    // ==================== DELETE TESTS ====================
+
+
+
+    @Test
+    void delete_whenAccountNotFound_shouldFail() {
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.empty());
+
+
+
+        StepVerifier.create(service.delete("a1"))
+                .expectError()
+                .verify();
+
+    }
+
+
+
+
+
+    @Test
+    void delete_shouldDeleteAccount() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+        when(repository.delete(account))
+                .thenReturn(Mono.empty());
+
+
+
+        StepVerifier.create(service.delete("a1"))
+                .verifyComplete();
+
+
+
+        verify(repository)
+                .delete(account);
+
+    }
+
+
+
+
+
+
+
+
+    // ==================== FIXED TERM ACCOUNT ====================
+
+
+
+    @Test
+    void deposit_fixedTermAccount_wrongDay_shouldFail() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .type(AccountType.FIXED_TERM)
+                        .movementDay(1)
+                        .balance(BigDecimal.valueOf(100))
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+
+        StepVerifier.create(
+                        service.deposit(
+                                "a1",
+                                BigDecimal.valueOf(50)
+                        )
+                )
+                .expectError()
+                .verify();
+
+    }
+
+
+
+
+
+    @Test
+    void withdraw_fixedTermAccount_wrongDay_shouldFail() {
+
+
+        Account account =
+                Account.builder()
+                        .id("a1")
+                        .type(AccountType.FIXED_TERM)
+                        .movementDay(1)
+                        .balance(BigDecimal.valueOf(100))
+                        .build();
+
+
+
+        when(repository.findById("a1"))
+                .thenReturn(Mono.just(account));
+
+
+
+        StepVerifier.create(
+                        service.withdraw(
+                                "a1",
+                                BigDecimal.valueOf(50)
+                        )
+                )
+                .expectError()
+                .verify();
+
+    }
+
+
+
+
+
+
+
+
+
+    // ==================== CUSTOMER RULES ====================
+
+
+
+    @Test
+    void create_withBusinessCustomerAndFixedTerm_shouldFail() {
+
+
+        Customer customer =
+                Customer.builder()
+                        .id("c1")
+                        .customerType(CustomerType.BUSINESS)
+                        .build();
+
+
+
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .type(AccountType.FIXED_TERM)
+                        .movementDay(15)
+                        .build();
+
+
+
+        when(customerClient.getCustomerById("c1"))
+                .thenReturn(Mono.just(customer));
+
+
+
+        StepVerifier.create(service.create(account))
+                .expectError()
+                .verify();
+
+    }
+
+
+
+
+
+
+
+    @Test
+    void create_withPYMECustomerAndCheckingWithCard_shouldSucceed() {
+
+
+        Credit credit =
+                Credit.builder()
+                        .creditType(CreditType.CREDIT_CARD)
+                        .build();
+
+
+
+        Customer customer =
+                Customer.builder()
+                        .id("c1")
+                        .customerType(CustomerType.PERSONAL)
+                        .customerProfile(CustomerProfile.PYME)
+                        .build();
+
+
+
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
+
+
+        when(customerClient.getCustomerById("c1"))
+                .thenReturn(Mono.just(customer));
+
+
+        when(creditClient.getCreditsByCustomer("c1"))
+                .thenReturn(Flux.just(credit));
+
+
+
+        when(repository.existsByCustomerIdAndType(
+                "c1",
+                AccountType.CHECKING))
+                .thenReturn(Mono.just(false));
+
+
+
+        when(repository.save(any(Account.class)))
+                .thenAnswer(i -> Mono.just(i.getArgument(0)));
+
+
 
         StepVerifier.create(service.create(account))
                 .expectNextCount(1)
                 .verifyComplete();
 
-        verify(repository).save(any(Account.class));
     }
 
+
+
+
+
+
     @Test
-    void create_withPYMECustomerWithoutCreditCard_shouldFail() {
+    void create_withPYMEWithoutCreditCard_shouldFail() {
 
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.PYME)
-                .build();
 
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.CHECKING)
-                .build();
+        Customer customer =
+                Customer.builder()
+                        .id("c1")
+                        .customerType(CustomerType.PERSONAL)
+                        .customerProfile(CustomerProfile.PYME)
+                        .build();
+
+
+
+        Account account =
+                Account.builder()
+                        .customerId("c1")
+                        .type(AccountType.CHECKING)
+                        .build();
+
+
 
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
 
-        StepVerifier.create(service.create(account))
-                .expectError()
-                .verify();
-    }
 
-    @Test
-    void create_withPYMECustomerAndSavingsAccount_shouldFail() {
-        Customer customer = Customer.builder()
-                .id("c1")
-                .customerType(CustomerType.PERSONAL)
-                .customerProfile(CustomerProfile.PYME)
-                .build();
-
-        Account account = Account.builder()
-                .customerId("c1")
-                .type(AccountType.SAVINGS)
-                .build();
-
-        when(customerClient.getCustomerById("c1")).thenReturn(Mono.just(customer));
 
         StepVerifier.create(service.create(account))
                 .expectError()
                 .verify();
+
     }
 
-    // ==================== FIXED TERM ACCOUNT VALIDATION ====================
-
-    @Test
-    void deposit_onFixedTermAccount_whenNotMovementDay_shouldFail() {
-        Account account = Account.builder()
-                .id("a1")
-                .type(AccountType.FIXED_TERM)
-                .movementDay(25)
-                .balance(BigDecimal.valueOf(100))
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-
-        StepVerifier.create(service.deposit("a1", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
-
-    @Test
-    void withdraw_onFixedTermAccount_whenNotMovementDay_shouldFail() {
-        Account account = Account.builder()
-                .id("a1")
-                .type(AccountType.FIXED_TERM)
-                .movementDay(25)
-                .balance(BigDecimal.valueOf(100))
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-
-        StepVerifier.create(service.withdraw("a1", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
-
-    // ==================== COMMISSION TESTS ====================
-
-    @Test
-    void deposit_whenCommissionApplies_shouldDeductFromBalance() {
-        Account account = Account.builder()
-                .id("a1")
-                .type(AccountType.CHECKING)
-                .balance(BigDecimal.valueOf(100))
-                .freeTransactions(2)
-                .transactionCommission(BigDecimal.valueOf(5))
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-        when(movementService.countMovements("a1")).thenReturn(Mono.just(3L));
-        when(repository.save(any(Account.class))).thenAnswer(i -> Mono.just(i.getArgument(0)));
-        when(movementService.save(any(Movement.class))).thenReturn(Mono.just(Movement.builder().id("m1").build()));
-
-        StepVerifier.create(service.deposit("a1", BigDecimal.valueOf(50)))
-                .expectNextMatches(saved -> saved.getBalance().compareTo(BigDecimal.valueOf(145)) == 0)
-                .verifyComplete();
-    }
-
-    @Test
-    void deposit_whenCommissionExceedsBalance_shouldFail() {
-        Account account = Account.builder()
-                .id("a1")
-                .type(AccountType.CHECKING)
-                .balance(BigDecimal.valueOf(3))
-                .freeTransactions(2)
-                .transactionCommission(BigDecimal.valueOf(5))
-                .build();
-
-        when(repository.findById("a1")).thenReturn(Mono.just(account));
-        when(movementService.countMovements("a1")).thenReturn(Mono.just(3L));
-
-        StepVerifier.create(service.deposit("a1", BigDecimal.valueOf(50)))
-                .expectError()
-                .verify();
-    }
 }

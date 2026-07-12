@@ -1,9 +1,8 @@
-package com.bank.account.model;
+package com.bank.account.event;
 
+import com.bank.account.enums.AccountType;
 import com.bank.account.enums.MovementType;
 import lombok.*;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -13,13 +12,15 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Document(collection = "movements")
-public class Movement {
-
-    @Id
-    private String id;
+public class AccountMovementEvent {
 
     private String accountId;
+
+    private String accountNumber;
+
+    private AccountType accountType;
+
+    private String customerId;
 
     private MovementType movementType;
 

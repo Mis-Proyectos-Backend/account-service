@@ -1,5 +1,6 @@
 package com.bank.account.controller;
 
+import com.bank.account.dto.TransferRequest;
 import com.bank.account.model.Account;
 import com.bank.account.service.AccountService;
 import org.springframework.http.ResponseEntity;
@@ -59,4 +60,15 @@ public class AccountController {
     public Mono<Void> delete(@PathVariable String id) {
         return service.delete(id);
     }
+
+
+    @PostMapping("/transfer")
+    public Mono<ResponseEntity<Void>> transfer(@RequestBody TransferRequest request) {
+        return service.transfer(
+                request.getSourceAccountId(),
+                request.getDestinationAccountId(),
+                request.getAmount()
+        ).thenReturn(ResponseEntity.ok().build());
+    }
+
 }

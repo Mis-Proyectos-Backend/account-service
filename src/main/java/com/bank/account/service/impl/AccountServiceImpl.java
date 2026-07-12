@@ -9,16 +9,17 @@ import com.bank.account.enums.CreditType;
 import com.bank.account.enums.CustomerProfile;
 import com.bank.account.enums.MovementType;
 import com.bank.account.model.Account;
-import com.bank.account.model.Movement;
 import com.bank.account.repository.AccountRepository;
 import com.bank.account.service.AccountService;
-import com.bank.account.service.MovementService;
+import com.bank.account.producer.AccountMovementProducer;
+import com.bank.account.event.AccountMovementEvent;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,18 +31,19 @@ public class AccountServiceImpl implements AccountService {
     private final AccountRepository repository;
     private final CustomerClient customerClient;
     private final CreditClient creditClient;
-    private final MovementService movementService;
+    private final AccountMovementProducer accountMovementProducer;
     private final AccountProperties accountProperties;
+
 
     public AccountServiceImpl(AccountRepository repository,
                               CustomerClient customerClient,
                               CreditClient creditClient,
-                              MovementService movementService,
+                              AccountMovementProducer accountMovementProducer,
                               AccountProperties accountProperties) {
         this.repository = repository;
         this.customerClient = customerClient;
         this.creditClient = creditClient;
-        this.movementService = movementService;
+        this.accountMovementProducer = accountMovementProducer;
         this.accountProperties = accountProperties;
     }
 
@@ -91,6 +93,7 @@ public class AccountServiceImpl implements AccountService {
                 .flatMap(this::applyTransactionCommission)
                 .flatMap(account -> {
                     account.setBalance(account.getBalance().add(amount));
+                    account.setTransactionCount(account.getTransactionCount() + 1);
                     return repository.save(account)
                             .flatMap(savedAccount -> saveMovement(savedAccount, MovementType.DEPOSIT, amount)
                                     .thenReturn(savedAccount));
@@ -113,6 +116,7 @@ public class AccountServiceImpl implements AccountService {
                     }
 
                     account.setBalance(account.getBalance().subtract(amount));
+                    account.setTransactionCount(account.getTransactionCount() + 1);
                     return repository.save(account)
                             .flatMap(savedAccount -> saveMovement(savedAccount, MovementType.WITHDRAW, amount)
                                     .thenReturn(savedAccount));
@@ -140,7 +144,7 @@ public class AccountServiceImpl implements AccountService {
     public Mono<Void> delete(String id) {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
-                .flatMap(account -> repository.delete(account));
+                .flatMap(repository::delete);
     }
 
     /* ---------------- Private helpers (grouped) ---------------- */
@@ -196,6 +200,7 @@ public class AccountServiceImpl implements AccountService {
     private Mono<Account> saveAccount(Account account) {
         initializeAccountConfiguration(account);
         account.setCreatedAt(LocalDate.now());
+        account.setTransactionCount(0);
         return repository.save(account);
     }
 
@@ -264,6 +269,10 @@ public class AccountServiceImpl implements AccountService {
         from.setBalance(from.getBalance().subtract(amount));
         to.setBalance(to.getBalance().add(amount));
 
+        // incrementar movimientos
+        from.setTransactionCount(from.getTransactionCount() + 1);
+        to.setTransactionCount(to.getTransactionCount() + 1);
+
         return repository.save(from)
                 .flatMap(savedFrom -> repository.save(to)
                         .flatMap(savedTo -> Mono.when(
@@ -274,30 +283,32 @@ public class AccountServiceImpl implements AccountService {
 
     // Movements & commissions
     private Mono<Void> saveMovement(Account account, MovementType movementType, BigDecimal amount) {
-        Movement movement = Movement.builder()
+        AccountMovementEvent event = AccountMovementEvent.builder()
                 .accountId(account.getId())
+                .accountNumber(account.getAccountNumber())
+                .accountType(account.getType())
+                .customerId(account.getCustomerId())
                 .movementType(movementType)
                 .amount(amount)
                 .balanceAfterMovement(account.getBalance())
                 .movementDate(LocalDateTime.now())
                 .build();
-        return movementService.save(movement).then();
+
+        return accountMovementProducer.send(event);
     }
 
     private Mono<Account> applyTransactionCommission(Account account) {
         if (account.getFreeTransactions() == null || account.getTransactionCommission() == null) {
             return Mono.just(account);
         }
-        return movementService.countMovements(account.getId())
-                .flatMap(totalMovements -> {
-                    if (totalMovements >= account.getFreeTransactions()) {
-                        BigDecimal balanceAfterCommission = account.getBalance().subtract(account.getTransactionCommission());
-                        if (balanceAfterCommission.compareTo(BigDecimal.ZERO) < 0) {
-                            return Mono.error(new RuntimeException("Insufficient balance to pay transaction commission"));
-                        }
-                        account.setBalance(balanceAfterCommission);
-                    }
-                    return Mono.just(account);
-                });
+        if (account.getTransactionCount() >= account.getFreeTransactions()) {
+            BigDecimal balanceAfterCommission = account.getBalance().subtract(account.getTransactionCommission());
+            if (balanceAfterCommission.compareTo(BigDecimal.ZERO) < 0) {
+                return Mono.error(new RuntimeException("Insufficient balance to pay transaction commission")
+                );
+            }
+            account.setBalance(balanceAfterCommission);
+        }
+        return Mono.just(account);
     }
 }

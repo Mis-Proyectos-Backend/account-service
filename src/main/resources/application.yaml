@@ -4,6 +4,12 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/accountdb
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 server:
   port: 8082
 eureka:
@@ -12,6 +18,9 @@ eureka:
       defaultZone: http://localhost:8761/eureka
     register-with-eureka: true
     fetch-registry: true
+
+  instance:
+    hostname: localhost
 
 resilience4j:
   circuitbreaker:
