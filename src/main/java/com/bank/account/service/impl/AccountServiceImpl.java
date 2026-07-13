@@ -53,11 +53,32 @@ public class AccountServiceImpl implements AccountService {
 
     /* ---------------- Public API (ordered) ---------------- */
 
+
     @Override
     public Mono<Account> create(Account account) {
+
         return customerClient.getCustomerById(account.getCustomerId())
-                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not found")))
-                .flatMap(customer -> validateAndSave(customer, account));
+                .switchIfEmpty(
+                        Mono.error(
+                                new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND,
+                                        "Customer not found"
+                                )
+                        )
+                )
+                .flatMap(customer ->
+                        creditClient.hasOverdueDebt(customer.getId())
+                                .flatMap(hasOverdueDebt -> {
+                                    if (hasOverdueDebt) {
+                                        return Mono.error(
+                                                new RuntimeException(
+                                                        "Customer has overdue credit debt"
+                                                )
+                                        );
+                                    }
+                                    return validateAndSave(customer, account);
+                                })
+                );
     }
 
     @Override

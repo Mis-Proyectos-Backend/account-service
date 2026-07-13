@@ -78,21 +78,17 @@ class AccountServiceImplTest {
                 redisTemplate
         );
 
-
         lenient()
                 .when(accountConfig.getFreeTransactions())
                 .thenReturn(5);
-
 
         lenient()
                 .when(accountConfig.getTransactionCommission())
                 .thenReturn(BigDecimal.valueOf(2));
 
-
         lenient()
                 .when(accountProperties.getByType(any()))
                 .thenReturn(accountConfig);
-
 
         lenient()
                 .when(movementProducer.send(any(AccountMovementEvent.class)))
@@ -116,74 +112,52 @@ class AccountServiceImplTest {
     }
 
 
-
     // ==================== CREATE TESTS ====================
 
 
     @Test
     void create_whenCustomerNotFound_shouldReturnNotFound() {
-
         Account account =
                 Account.builder()
                         .customerId("c1")
                         .build();
-
-
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.empty());
-
-
         StepVerifier.create(service.create(account))
                 .expectError()
                 .verify();
-
-
         verify(customerClient)
                 .getCustomerById("c1");
     }
 
-
-
     @Test
     void create_withPersonalCustomerAndCheckingAccount_shouldSucceed() {
-
-
         Customer customer =
                 Customer.builder()
                         .id("c1")
                         .customerType(CustomerType.PERSONAL)
                         .customerProfile(CustomerProfile.STANDARD)
                         .build();
-
-
         Account account =
                 Account.builder()
                         .customerId("c1")
                         .type(AccountType.CHECKING)
                         .build();
-
-
-
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
-
-
         when(repository.existsByCustomerIdAndType(
                 "c1",
                 AccountType.CHECKING))
                 .thenReturn(Mono.just(false));
-
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
 
-
+        when(creditClient.hasOverdueDebt("c1"))
+                .thenReturn(Mono.just(false));
 
         StepVerifier.create(service.create(account))
                 .expectNextCount(1)
                 .verifyComplete();
-
-
         verify(repository)
                 .save(any(Account.class));
     }
@@ -193,13 +167,11 @@ class AccountServiceImplTest {
     @Test
     void create_withBusinessCustomerAndSavingsAccount_shouldFail() {
 
-
         Customer customer =
                 Customer.builder()
                         .id("c1")
                         .customerType(CustomerType.BUSINESS)
                         .build();
-
 
         Account account =
                 Account.builder()
@@ -207,12 +179,8 @@ class AccountServiceImplTest {
                         .type(AccountType.SAVINGS)
                         .build();
 
-
-
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
-
-
 
         StepVerifier.create(service.create(account))
                 .expectError()
@@ -224,63 +192,45 @@ class AccountServiceImplTest {
 
     @Test
     void create_withVIPCustomerAndSavingsAccount_shouldSucceed() {
-
-
         Credit credit =
                 Credit.builder()
                         .creditType(CreditType.CREDIT_CARD)
                         .build();
-
-
-
         Customer customer =
                 Customer.builder()
                         .id("c1")
                         .customerType(CustomerType.PERSONAL)
                         .customerProfile(CustomerProfile.VIP)
                         .build();
-
-
-
         Account account =
                 Account.builder()
                         .customerId("c1")
                         .type(AccountType.SAVINGS)
                         .build();
-
-
-
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
 
-
         when(creditClient.getCreditsByCustomer("c1"))
                 .thenReturn(Flux.just(credit));
-
 
         when(repository.existsByCustomerIdAndType(
                 "c1",
                 AccountType.SAVINGS))
                 .thenReturn(Mono.just(false));
 
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
 
-
+        when(creditClient.hasOverdueDebt("c1"))
+                .thenReturn(Mono.just(false));
 
         StepVerifier.create(service.create(account))
                 .expectNextCount(1)
                 .verifyComplete();
-
     }
-
-
 
     @Test
     void create_withVIPCustomerWithoutCreditCard_shouldFail() {
-
-
         Customer customer =
                 Customer.builder()
                         .id("c1")
@@ -288,20 +238,14 @@ class AccountServiceImplTest {
                         .customerProfile(CustomerProfile.VIP)
                         .build();
 
-
-
         Account account =
                 Account.builder()
                         .customerId("c1")
                         .type(AccountType.SAVINGS)
                         .build();
 
-
-
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
-
-
 
         StepVerifier.create(service.create(account))
                 .expectError()
@@ -313,7 +257,6 @@ class AccountServiceImplTest {
 
     @Test
     void deposit_whenAmountIsZero_shouldFail() {
-
         StepVerifier.create(
                         service.deposit("a1", BigDecimal.ZERO)
                 )
@@ -321,11 +264,8 @@ class AccountServiceImplTest {
                 .verify();
     }
 
-
-
     @Test
     void deposit_whenAmountIsNegative_shouldFail() {
-
         StepVerifier.create(
                         service.deposit("a1", BigDecimal.valueOf(-50))
                 )
@@ -337,11 +277,8 @@ class AccountServiceImplTest {
 
     @Test
     void deposit_whenAccountNotFound_shouldFail() {
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
-
 
         StepVerifier.create(
                         service.deposit("a1", BigDecimal.valueOf(50))
@@ -355,8 +292,6 @@ class AccountServiceImplTest {
 
     @Test
     void deposit_shouldIncreaseBalanceAndTransactionCount() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
@@ -367,16 +302,11 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
 
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-
 
         StepVerifier.create(
                         service.deposit("a1", BigDecimal.valueOf(50))
@@ -388,8 +318,6 @@ class AccountServiceImplTest {
                                 saved.getTransactionCount() == 1
                 )
                 .verifyComplete();
-
-
 
         verify(movementProducer)
                 .send(argThat(event ->
@@ -412,7 +340,6 @@ class AccountServiceImplTest {
 
     @Test
     void withdraw_whenAmountIsZero_shouldFail() {
-
         StepVerifier.create(
                         service.withdraw("a1", BigDecimal.ZERO)
                 )
@@ -426,11 +353,8 @@ class AccountServiceImplTest {
 
     @Test
     void withdraw_whenAccountNotFound_shouldFail() {
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
-
 
         StepVerifier.create(
                         service.withdraw("a1", BigDecimal.valueOf(50))
@@ -445,8 +369,6 @@ class AccountServiceImplTest {
 
     @Test
     void withdraw_whenInsufficientBalance_shouldFail() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
@@ -455,12 +377,8 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
-
-
 
         StepVerifier.create(
                         service.withdraw("a1", BigDecimal.valueOf(50))
@@ -476,8 +394,6 @@ class AccountServiceImplTest {
 
     @Test
     void withdraw_shouldDecreaseBalanceAndIncreaseTransactionCount() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
@@ -488,16 +404,11 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
 
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-
 
         StepVerifier.create(
                         service.withdraw("a1", BigDecimal.valueOf(30))
@@ -510,8 +421,6 @@ class AccountServiceImplTest {
                 )
                 .verifyComplete();
 
-
-
         verify(movementProducer)
                 .send(argThat(event ->
                         event.getMovementType()
@@ -520,18 +429,10 @@ class AccountServiceImplTest {
     }
 
 
-
-
-
-
     // ==================== TRANSFER TESTS ====================
-
-
 
     @Test
     void transfer_whenAmountIsZero_shouldFail() {
-
-
         StepVerifier.create(
                         service.transfer(
                                 "a1",
@@ -549,16 +450,11 @@ class AccountServiceImplTest {
 
     @Test
     void transfer_whenSourceAccountNotFound_shouldFail() {
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
 
-
         when(repository.findById("a2"))
                 .thenReturn(Mono.empty());
-
-
 
         StepVerifier.create(
                         service.transfer(
@@ -571,16 +467,8 @@ class AccountServiceImplTest {
                 .verify();
     }
 
-
-
-
-
-
-
     @Test
     void transfer_whenDestinationAccountNotFound_shouldFail() {
-
-
         Account source =
                 Account.builder()
                         .id("a1")
@@ -588,16 +476,11 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(source));
 
-
         when(repository.findById("a2"))
                 .thenReturn(Mono.empty());
-
-
 
         StepVerifier.create(
                         service.transfer(
@@ -608,7 +491,6 @@ class AccountServiceImplTest {
                 )
                 .expectError()
                 .verify();
-
     }
 
 
@@ -617,16 +499,12 @@ class AccountServiceImplTest {
 
     @Test
     void transfer_whenInsufficientBalance_shouldFail() {
-
-
         Account source =
                 Account.builder()
                         .id("a1")
                         .balance(BigDecimal.valueOf(20))
                         .type(AccountType.CHECKING)
                         .build();
-
-
 
         Account destination =
                 Account.builder()
@@ -635,16 +513,11 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(source));
 
-
         when(repository.findById("a2"))
                 .thenReturn(Mono.just(destination));
-
-
 
         StepVerifier.create(
                         service.transfer(
@@ -658,14 +531,8 @@ class AccountServiceImplTest {
     }
 
 
-
-
-
-
-
     @Test
     void transfer_shouldUpdateBalancesAndPublishEvents() {
-
 
         Account source =
                 Account.builder()
@@ -674,8 +541,6 @@ class AccountServiceImplTest {
                         .transactionCount(0)
                         .type(AccountType.CHECKING)
                         .build();
-
-
 
         Account destination =
                 Account.builder()
@@ -685,20 +550,14 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(source));
-
 
         when(repository.findById("a2"))
                 .thenReturn(Mono.just(destination));
 
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-
 
         StepVerifier.create(
                         service.transfer(
@@ -709,30 +568,18 @@ class AccountServiceImplTest {
                 )
                 .verifyComplete();
 
-
-
         verify(repository, times(2))
                 .save(any(Account.class));
 
-
-
         verify(movementProducer, times(2))
                 .send(any(AccountMovementEvent.class));
-
     }
-
-
-
 
 
     // ==================== COMMISSION TESTS ====================
 
-
-
     @Test
     void deposit_whenCommissionApplies_shouldDeductCommission() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
@@ -743,16 +590,11 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
 
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-
 
         StepVerifier.create(
                         service.deposit("a1", BigDecimal.valueOf(50))
@@ -766,13 +608,8 @@ class AccountServiceImplTest {
     }
 
 
-
-
-
     @Test
     void deposit_whenCommissionCannotBePaid_shouldFail() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
@@ -783,19 +620,14 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
-
-
 
         StepVerifier.create(
                         service.deposit("a1", BigDecimal.valueOf(50))
                 )
                 .expectError()
                 .verify();
-
     }
 
     // ==================== GET TESTS ====================
@@ -908,10 +740,6 @@ class AccountServiceImplTest {
 
     }
 
-
-
-
-
     // ==================== UPDATE TESTS ====================
 
 
@@ -933,32 +761,22 @@ class AccountServiceImplTest {
 
     @Test
     void update_shouldUpdateAccountType() {
-
-
         Account existing =
                 Account.builder()
                         .id("a1")
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         Account updated =
                 Account.builder()
                         .type(AccountType.SAVINGS)
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(existing));
 
-
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-
 
         StepVerifier.create(
                         service.update("a1", updated)
@@ -967,81 +785,45 @@ class AccountServiceImplTest {
                         account.getType() == AccountType.SAVINGS
                 )
                 .verifyComplete();
-
     }
-
-
-
 
 
     // ==================== DELETE TESTS ====================
 
 
-
     @Test
     void delete_whenAccountNotFound_shouldFail() {
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
-
-
-
         StepVerifier.create(service.delete("a1"))
                 .expectError()
                 .verify();
-
     }
-
-
-
 
 
     @Test
     void delete_shouldDeleteAccount() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
                         .build();
-
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
-
-
         when(repository.delete(account))
                 .thenReturn(Mono.empty());
-
-
-
         StepVerifier.create(service.delete("a1"))
                 .verifyComplete();
-
-
-
         verify(repository)
                 .delete(account);
 
     }
 
 
-
-
-
-
-
-
     // ==================== FIXED TERM ACCOUNT ====================
-
 
 
     @Test
     void deposit_fixedTermAccount_wrongDay_shouldFail() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
@@ -1050,12 +832,8 @@ class AccountServiceImplTest {
                         .balance(BigDecimal.valueOf(100))
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
-
-
 
         StepVerifier.create(
                         service.deposit(
@@ -1068,14 +846,8 @@ class AccountServiceImplTest {
 
     }
 
-
-
-
-
     @Test
     void withdraw_fixedTermAccount_wrongDay_shouldFail() {
-
-
         Account account =
                 Account.builder()
                         .id("a1")
@@ -1084,12 +856,8 @@ class AccountServiceImplTest {
                         .balance(BigDecimal.valueOf(100))
                         .build();
 
-
-
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
-
-
 
         StepVerifier.create(
                         service.withdraw(
@@ -1103,28 +871,17 @@ class AccountServiceImplTest {
     }
 
 
-
-
-
-
-
-
-
     // ==================== CUSTOMER RULES ====================
-
 
 
     @Test
     void create_withBusinessCustomerAndFixedTerm_shouldFail() {
-
 
         Customer customer =
                 Customer.builder()
                         .id("c1")
                         .customerType(CustomerType.BUSINESS)
                         .build();
-
-
 
         Account account =
                 Account.builder()
@@ -1133,12 +890,8 @@ class AccountServiceImplTest {
                         .movementDay(15)
                         .build();
 
-
-
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
-
-
 
         StepVerifier.create(service.create(account))
                 .expectError()
@@ -1146,76 +899,48 @@ class AccountServiceImplTest {
 
     }
 
-
-
-
-
-
-
     @Test
     void create_withPYMECustomerAndCheckingWithCard_shouldSucceed() {
+        Credit credit = Credit.builder()
+                .creditType(CreditType.CREDIT_CARD)
+                .build();
 
+        Customer customer = Customer.builder()
+                .id("c1")
+                .customerType(CustomerType.PERSONAL)
+                .customerProfile(CustomerProfile.PYME)
+                .build();
 
-        Credit credit =
-                Credit.builder()
-                        .creditType(CreditType.CREDIT_CARD)
-                        .build();
-
-
-
-        Customer customer =
-                Customer.builder()
-                        .id("c1")
-                        .customerType(CustomerType.PERSONAL)
-                        .customerProfile(CustomerProfile.PYME)
-                        .build();
-
-
-
-        Account account =
-                Account.builder()
-                        .customerId("c1")
-                        .type(AccountType.CHECKING)
-                        .build();
-
-
-
+        Account account = Account.builder()
+                .customerId("c1")
+                .type(AccountType.CHECKING)
+                .build();
 
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
 
+        // NUEVO
+        when(creditClient.hasOverdueDebt("c1"))
+                .thenReturn(Mono.just(false));
 
         when(creditClient.getCreditsByCustomer("c1"))
                 .thenReturn(Flux.just(credit));
-
-
 
         when(repository.existsByCustomerIdAndType(
                 "c1",
                 AccountType.CHECKING))
                 .thenReturn(Mono.just(false));
 
-
-
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-
 
         StepVerifier.create(service.create(account))
                 .expectNextCount(1)
                 .verifyComplete();
-
     }
-
-
-
-
-
 
     @Test
     void create_withPYMEWithoutCreditCard_shouldFail() {
-
 
         Customer customer =
                 Customer.builder()
@@ -1224,25 +949,43 @@ class AccountServiceImplTest {
                         .customerProfile(CustomerProfile.PYME)
                         .build();
 
-
-
         Account account =
                 Account.builder()
                         .customerId("c1")
                         .type(AccountType.CHECKING)
                         .build();
 
-
-
         when(customerClient.getCustomerById("c1"))
                 .thenReturn(Mono.just(customer));
-
-
 
         StepVerifier.create(service.create(account))
                 .expectError()
                 .verify();
-
     }
 
+    @Test
+    void create_whenCustomerHasOverdueDebt_shouldFail() {
+
+        Account account = Account.builder()
+                .customerId("c1")
+                .type(AccountType.SAVINGS)
+                .build();
+
+        Customer customer = Customer.builder()
+                .id("c1")
+                .customerType(CustomerType.PERSONAL)
+                .build();
+
+        when(customerClient.getCustomerById("c1"))
+                .thenReturn(Mono.just(customer));
+
+        when(creditClient.hasOverdueDebt("c1"))
+                .thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.create(account))
+                .expectErrorMessage("Customer has overdue credit debt")
+                .verify();
+
+        verify(repository, never()).save(any());
+    }
 }

@@ -5,6 +5,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @Component
 public class CreditClient {
@@ -26,5 +27,16 @@ public class CreditClient {
 
     public Flux<Credit> fallbackCredits(String customerId, Throwable ex) {
         return Flux.empty();
+    }
+    @CircuitBreaker(name = "creditService", fallbackMethod = "fallbackHasOverdueDebt")
+    public Mono<Boolean> hasOverdueDebt(String customerId) {
+
+        return webClient.get()
+                .uri("http://credit-service/credits/customers/{customerId}/overdue", customerId)
+                .retrieve()
+                .bodyToMono(Boolean.class);
+    }
+    public Mono<Boolean> fallbackHasOverdueDebt(String customerId, Throwable ex) {
+        return Mono.just(false);
     }
 }
