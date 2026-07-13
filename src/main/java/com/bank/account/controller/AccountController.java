@@ -1,8 +1,10 @@
 package com.bank.account.controller;
 
+import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.dto.TransferRequest;
 import com.bank.account.model.Account;
 import com.bank.account.service.AccountService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
@@ -51,9 +53,13 @@ public class AccountController {
     }
 
     @PostMapping("/{id}/withdraw")
-    public Mono<Account> withdraw(@PathVariable String id,
-                                  @RequestParam BigDecimal amount) {
-        return service.withdraw(id, amount);
+    public Mono<ResponseEntity<Account>> withdraw(
+            @PathVariable String id,
+            @Valid @RequestBody WithdrawRequest request) {
+
+        return service.withdraw(id, request)
+                .map(ResponseEntity::ok);
+
     }
 
     @DeleteMapping("/{id}")

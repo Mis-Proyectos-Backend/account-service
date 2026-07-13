@@ -1,6 +1,8 @@
 package com.bank.account.controller;
 
+import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.dto.TransferRequest;
+import com.bank.account.enums.PaymentMethod;
 import com.bank.account.model.Account;
 import com.bank.account.enums.AccountType;
 import com.bank.account.service.AccountService;
@@ -161,21 +163,30 @@ class AccountControllerTest {
 
     @Test
     void withdraw_shouldReturnAccount() {
+
         Account account = Account.builder()
                 .id("a1")
                 .balance(BigDecimal.valueOf(50))
                 .build();
+
+
+        WithdrawRequest request = WithdrawRequest.builder()
+                .amount(BigDecimal.valueOf(50))
+                .paymentMethod(PaymentMethod.DEBIT_CARD)
+                .build();
+
+
         when(service.withdraw(
                 eq("a1"),
-                eq(BigDecimal.valueOf(50))
+                any(WithdrawRequest.class)
         ))
                 .thenReturn(Mono.just(account));
 
+
         webTestClient.post()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/accounts/a1/withdraw")
-                        .queryParam("amount", 50)
-                        .build())
+                .uri("/accounts/a1/withdraw")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
                 .exchange()
                 .expectStatus()
                 .isOk()

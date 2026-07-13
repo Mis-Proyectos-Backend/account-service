@@ -3,11 +3,9 @@ package com.bank.account.service.impl;
 import com.bank.account.client.CreditClient;
 import com.bank.account.client.CustomerClient;
 import com.bank.account.client.dto.Customer;
+import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.config.AccountProperties;
-import com.bank.account.enums.AccountType;
-import com.bank.account.enums.CreditType;
-import com.bank.account.enums.CustomerProfile;
-import com.bank.account.enums.MovementType;
+import com.bank.account.enums.*;
 import com.bank.account.model.Account;
 import com.bank.account.repository.AccountRepository;
 import com.bank.account.service.AccountService;
@@ -25,6 +23,7 @@ import reactor.util.function.Tuple2;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Service
 public class AccountServiceImpl implements AccountService {
@@ -142,7 +141,7 @@ public class AccountServiceImpl implements AccountService {
                     account.setTransactionCount(account.getTransactionCount() + 1);
                     return repository.save(account)
                             .flatMap(savedAccount ->
-                                            saveMovement(savedAccount, MovementType.DEPOSIT, amount)
+                                            saveMovement(savedAccount, MovementType.DEPOSIT,  PaymentMethod.ACCOUNT, amount)
                                                     .then(redisTemplate.delete("account:" + savedAccount.getId()))
                                                     .thenReturn(savedAccount)
                             );
@@ -150,7 +149,15 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public Mono<Account> withdraw(String id, BigDecimal amount) {
+    public Mono<Account> withdraw(String id, WithdrawRequest request) {
+        PaymentMethod paymentMethod = request.getPaymentMethod();
+        if (paymentMethod == null) {
+            paymentMethod = PaymentMethod.ACCOUNT;
+        }
+        return withdraw(id, request.getAmount(), paymentMethod);
+    }
+
+    public Mono<Account> withdraw(String id, BigDecimal amount, PaymentMethod paymentMethod) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             return Mono.error(new IllegalArgumentException("El importe debe ser mayor que cero."));
         }
@@ -168,7 +175,7 @@ public class AccountServiceImpl implements AccountService {
                     account.setTransactionCount(account.getTransactionCount() + 1);
                     return repository.save(account)
                             .flatMap(savedAccount ->
-                                            saveMovement(savedAccount, MovementType.WITHDRAW, amount)
+                                            saveMovement(savedAccount, MovementType.WITHDRAW, paymentMethod,amount)
                                                     .then(redisTemplate.delete("account:" + savedAccount.getId()))
                                                     .thenReturn(savedAccount)
                             );
@@ -337,8 +344,8 @@ public class AccountServiceImpl implements AccountService {
         return repository.save(from)
                 .flatMap(savedFrom -> repository.save(to)
                         .flatMap(savedTo -> Mono.when(
-                                saveMovement(savedFrom, MovementType.WITHDRAW, amount),
-                                saveMovement(savedTo, MovementType.DEPOSIT, amount)
+                                saveMovement(savedFrom, MovementType.WITHDRAW, PaymentMethod.TRANSFER, amount),
+                                saveMovement(savedTo, MovementType.DEPOSIT, PaymentMethod.TRANSFER, amount)
                         ).then(
                                 Mono.when(
                                         redisTemplate.delete("account:" + savedFrom.getId()),
@@ -349,13 +356,15 @@ public class AccountServiceImpl implements AccountService {
     }
 
     // Movements & commissions
-    private Mono<Void> saveMovement(Account account, MovementType movementType, BigDecimal amount) {
+    private Mono<Void> saveMovement(Account account, MovementType movementType, PaymentMethod paymentMethod, BigDecimal amount) {
+
         AccountMovementEvent event = AccountMovementEvent.builder()
                 .accountId(account.getId())
                 .accountNumber(account.getAccountNumber())
                 .accountType(account.getType())
                 .customerId(account.getCustomerId())
                 .movementType(movementType)
+                .paymentMethod(paymentMethod)
                 .amount(amount)
                 .balanceAfterMovement(account.getBalance())
                 .movementDate(LocalDateTime.now())

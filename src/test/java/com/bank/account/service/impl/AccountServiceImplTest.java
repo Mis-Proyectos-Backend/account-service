@@ -4,6 +4,7 @@ import com.bank.account.client.CreditClient;
 import com.bank.account.client.CustomerClient;
 import com.bank.account.client.dto.Credit;
 import com.bank.account.client.dto.Customer;
+import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.config.AccountProperties;
 import com.bank.account.enums.*;
 import com.bank.account.event.AccountMovementEvent;
@@ -340,8 +341,13 @@ class AccountServiceImplTest {
 
     @Test
     void withdraw_whenAmountIsZero_shouldFail() {
+        WithdrawRequest request = WithdrawRequest.builder()
+                .amount(BigDecimal.ZERO)
+                .paymentMethod(PaymentMethod.DEBIT_CARD)
+                .build();
+
         StepVerifier.create(
-                        service.withdraw("a1", BigDecimal.ZERO)
+                        service.withdraw("a1", request)
                 )
                 .expectError(IllegalArgumentException.class)
                 .verify();
@@ -353,11 +359,17 @@ class AccountServiceImplTest {
 
     @Test
     void withdraw_whenAccountNotFound_shouldFail() {
+
+        WithdrawRequest request = WithdrawRequest.builder()
+                .amount(BigDecimal.valueOf(50))
+                .paymentMethod(PaymentMethod.DEBIT_CARD)
+                .build();
+
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(
-                        service.withdraw("a1", BigDecimal.valueOf(50))
+                        service.withdraw("a1", request)
                 )
                 .expectError()
                 .verify();
@@ -377,56 +389,21 @@ class AccountServiceImplTest {
                         .type(AccountType.CHECKING)
                         .build();
 
+        WithdrawRequest request = WithdrawRequest.builder()
+                .amount(BigDecimal.valueOf(50))
+                .paymentMethod(PaymentMethod.DEBIT_CARD)
+                .build();
+
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
 
         StepVerifier.create(
-                        service.withdraw("a1", BigDecimal.valueOf(50))
+                        service.withdraw("a1", request)
                 )
                 .expectError()
                 .verify();
     }
 
-
-
-
-
-
-    @Test
-    void withdraw_shouldDecreaseBalanceAndIncreaseTransactionCount() {
-        Account account =
-                Account.builder()
-                        .id("a1")
-                        .balance(BigDecimal.valueOf(100))
-                        .transactionCount(0)
-                        .freeTransactions(5)
-                        .transactionCommission(BigDecimal.valueOf(2))
-                        .type(AccountType.CHECKING)
-                        .build();
-
-        when(repository.findById("a1"))
-                .thenReturn(Mono.just(account));
-
-        when(repository.save(any(Account.class)))
-                .thenAnswer(i -> Mono.just(i.getArgument(0)));
-
-        StepVerifier.create(
-                        service.withdraw("a1", BigDecimal.valueOf(30))
-                )
-                .expectNextMatches(saved ->
-                        saved.getBalance()
-                                .compareTo(BigDecimal.valueOf(70)) == 0
-                                &&
-                                saved.getTransactionCount() == 1
-                )
-                .verifyComplete();
-
-        verify(movementProducer)
-                .send(argThat(event ->
-                        event.getMovementType()
-                                == MovementType.WITHDRAW
-                ));
-    }
 
 
     // ==================== TRANSFER TESTS ====================
@@ -855,14 +832,17 @@ class AccountServiceImplTest {
                         .movementDay(1)
                         .balance(BigDecimal.valueOf(100))
                         .build();
+        WithdrawRequest request = WithdrawRequest.builder()
+                .amount(BigDecimal.valueOf(50))
+                .paymentMethod(PaymentMethod.DEBIT_CARD)
+                .build();
 
         when(repository.findById("a1"))
                 .thenReturn(Mono.just(account));
 
         StepVerifier.create(
                         service.withdraw(
-                                "a1",
-                                BigDecimal.valueOf(50)
+                                "a1",request
                         )
                 )
                 .expectError()

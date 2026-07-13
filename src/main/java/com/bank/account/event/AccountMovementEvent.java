@@ -2,6 +2,7 @@ package com.bank.account.event;
 
 import com.bank.account.enums.AccountType;
 import com.bank.account.enums.MovementType;
+import com.bank.account.enums.PaymentMethod;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -23,6 +24,8 @@ public class AccountMovementEvent {
     private String customerId;
 
     private MovementType movementType;
+
+    private PaymentMethod paymentMethod;
 
     private BigDecimal amount;
 
