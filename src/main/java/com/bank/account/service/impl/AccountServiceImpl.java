@@ -6,6 +6,7 @@ import com.bank.account.client.dto.Customer;
 import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.config.AccountProperties;
 import com.bank.account.enums.*;
+import com.bank.account.exception.BusinessException;
 import com.bank.account.model.Account;
 import com.bank.account.repository.AccountRepository;
 import com.bank.account.service.AccountService;
@@ -24,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class AccountServiceImpl implements AccountService {
@@ -69,11 +71,7 @@ public class AccountServiceImpl implements AccountService {
                         creditClient.hasOverdueDebt(customer.getId())
                                 .flatMap(hasOverdueDebt -> {
                                     if (hasOverdueDebt) {
-                                        return Mono.error(
-                                                new RuntimeException(
-                                                        "Customer has overdue credit debt"
-                                                )
-                                        );
+                                        return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "El cliente ya tiene este tipo de cuenta"));
                                     }
                                     return validateAndSave(customer, account);
                                 })
@@ -90,7 +88,7 @@ public class AccountServiceImpl implements AccountService {
                 .switchIfEmpty(
                         repository.findById(id)
                                 .switchIfEmpty(
-                                        Mono.error(new RuntimeException("Cuenta no encontrada"))
+                                        Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cuenta no encontrada"))
                                 )
                                 .flatMap(account ->
                                         redisTemplate.opsForValue()
@@ -113,7 +111,7 @@ public class AccountServiceImpl implements AccountService {
     @Override
     public Mono<Account> update(String id, Account account) {
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cuenta no encontrada")))
                 .flatMap(existingAccount -> {
 
                     existingAccount.setType(account.getType());
@@ -133,7 +131,7 @@ public class AccountServiceImpl implements AccountService {
         }
 
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cuenta no encontrada")))
                 .flatMap(account -> validateFixedTermAccount(account).then(Mono.just(account)))
                 .flatMap(this::applyTransactionCommission)
                 .flatMap(account -> {
@@ -163,12 +161,12 @@ public class AccountServiceImpl implements AccountService {
         }
 
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cuenta no encontrada")))
                 .flatMap(account -> validateFixedTermAccount(account).then(Mono.just(account)))
                 .flatMap(this::applyTransactionCommission)
                 .flatMap(account -> {
                     if (account.getBalance().compareTo(amount) < 0) {
-                        return Mono.error(new RuntimeException("Fondos insuficientes"));
+                        return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fondos insuficientes"));
                     }
 
                     account.setBalance(account.getBalance().subtract(amount));
@@ -189,10 +187,10 @@ public class AccountServiceImpl implements AccountService {
         }
 
         Mono<Account> fromAccountMono = repository.findById(fromAccountId)
-                .switchIfEmpty(Mono.error(new RuntimeException("No se encontró la cuenta de origen.")));
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "No se encontró la cuenta de origen.")));
 
         Mono<Account> toAccountMono = repository.findById(toAccountId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta de destino no encontrada")));
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cuenta de destino no encontrada")));
 
         return Mono.zip(fromAccountMono, toAccountMono)
                 .flatMap(accounts -> validateTransfer(accounts, amount))
@@ -202,7 +200,7 @@ public class AccountServiceImpl implements AccountService {
     @Override
     public Mono<Void> delete(String id) {
         return repository.findById(id)
-                .switchIfEmpty(Mono.error(new RuntimeException("Cuenta no encontrada")))
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cuenta no encontrada")))
                 .flatMap(account ->
                         repository.delete(account)
                                 .then(redisTemplate.delete("account:" + id))
@@ -214,14 +212,14 @@ public class AccountServiceImpl implements AccountService {
     // Save / validation helpers
     private Mono<Account> validateAndSave(Customer customer, Account account) {
         if (customer.getCustomerType() != com.bank.account.enums.CustomerType.PERSONAL && customer.getCustomerType() != com.bank.account.enums.CustomerType.BUSINESS) {
-            return Mono.error(new RuntimeException("Tipo de cliente no válido"));
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tipo de cliente no válido"));
         }
         boolean isBusiness = customer.getCustomerType() == com.bank.account.enums.CustomerType.BUSINESS;
 
         if (!isBusiness) {
             if (account.getType() == AccountType.FIXED_TERM) {
                 if (account.getMovementDay() == null || account.getMovementDay() < 1 || account.getMovementDay() > 31) {
-                    return Mono.error(new RuntimeException("El día del movimiento debe estar entre 1 y 31."));
+                    return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "El día del movimiento debe estar entre 1 y 31."));
                 }
                 return validateInitialBalance(account)
                         .then(validateCustomerProfile(customer, account))
@@ -231,7 +229,7 @@ public class AccountServiceImpl implements AccountService {
             return repository.existsByCustomerIdAndType(account.getCustomerId(), account.getType())
                     .flatMap(exists -> {
                         if (exists) {
-                            return Mono.error(new RuntimeException("El cliente ya tiene este tipo de cuenta"));
+                            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "El cliente ya tiene este tipo de cuenta"));
                         }
                         return validateInitialBalance(account)
                                 .then(validateCustomerProfile(customer, account))
@@ -240,7 +238,8 @@ public class AccountServiceImpl implements AccountService {
         } else {
             boolean invalidAccountType = account.getType() == AccountType.SAVINGS || account.getType() == AccountType.FIXED_TERM;
             if (invalidAccountType) {
-                return Mono.error(new RuntimeException("Los clientes empresariales solo pueden tener cuentas corrientes."));
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Los clientes empresariales solo pueden tener cuentas corrientes."));
+
             }
             return validateInitialBalance(account)
                     .then(validateCustomerProfile(customer, account))
@@ -254,7 +253,7 @@ public class AccountServiceImpl implements AccountService {
             account.setBalance(BigDecimal.ZERO);
         }
         if (account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
-            return Mono.error(new RuntimeException("Initial balance cannot be negative"));
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Initial balance cannot be negative"));
         }
         return Mono.empty();
     }
@@ -280,25 +279,39 @@ public class AccountServiceImpl implements AccountService {
 
         account.setFreeTransactions(config.getFreeTransactions());
         account.setTransactionCommission(config.getTransactionCommission());
+        account.setAccountNumber(generateAccount());
+    }
+
+    // Generate Account Number
+    public static String generateAccount() {
+        String codBanco = "003";      // Simula banco
+        String codSucursal = "101";   // Sucursal
+        String digitosControl = "99"; // Dígitos de control
+        long numeroAleatorio = ThreadLocalRandom.current().nextLong(1, 1000000000L);
+        String cuentaUnica = String.format("%012d", numeroAleatorio);
+        // Retorna el CCI completo de 20 dígitos
+        return codBanco + codSucursal + cuentaUnica + digitosControl;
     }
 
     // Customer profile checks
     private Mono<Void> validateCustomerProfile(Customer customer, Account account) {
         if (customer.getCustomerProfile() == CustomerProfile.VIP) {
             if (account.getType() != AccountType.SAVINGS) {
-                return Mono.error(new RuntimeException("Los clientes VIP solo pueden abrir cuentas de ahorro."));
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Los clientes VIP solo pueden abrir cuentas de ahorro."));
+
+
             }
             return hasCreditCard(customer.getId())
-                    .flatMap(hasCard -> hasCard ? Mono.empty() : Mono.error(new RuntimeException("El cliente VIP debe tener una tarjeta de crédito.")));
+                    .flatMap(hasCard -> hasCard ? Mono.empty() : Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "El clienteb VIP debe tener una tarjeta de crédito.")));
         }
 
         if (customer.getCustomerProfile() == CustomerProfile.PYME) {
             if (account.getType() != AccountType.CHECKING) {
-                return Mono.error(new RuntimeException("Los clientes PYME solo pueden abrir cuentas corrientes."));
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Los clientes PYME solo pueden abrir cuentas corrientes."));
             }
             account.setTransactionCommission(BigDecimal.ZERO);
             return hasCreditCard(customer.getId())
-                    .flatMap(hasCard -> hasCard ? Mono.empty() : Mono.error(new RuntimeException("El cliente PYME debe tener una tarjeta de crédito.")));
+                    .flatMap(hasCard -> hasCard ? Mono.empty() : Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "El cliente PYME debe tener una tarjeta de crédito.")));
         }
 
         return Mono.empty();
@@ -316,7 +329,7 @@ public class AccountServiceImpl implements AccountService {
         }
         int today = LocalDate.now().getDayOfMonth();
         if (!Integer.valueOf(today).equals(account.getMovementDay())) {
-            return Mono.error(new RuntimeException("Las operaciones solo están permitidas durante el día " + account.getMovementDay()));
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Las operaciones solo están permitidas durante el día " + account.getMovementDay()));
         }
         return Mono.empty();
     }
@@ -326,7 +339,7 @@ public class AccountServiceImpl implements AccountService {
         Account from = accounts.getT1();
         Account to = accounts.getT2();
         if (from.getBalance().compareTo(amount) < 0) {
-            return Mono.error(new RuntimeException("Fondos insuficientes en la cuenta de origen."));
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fondos insuficientes en la cuenta de origen."));
         }
         return validateFixedTermAccount(from).then(validateFixedTermAccount(to)).thenReturn(accounts);
     }
@@ -380,8 +393,8 @@ public class AccountServiceImpl implements AccountService {
         if (account.getTransactionCount() >= account.getFreeTransactions()) {
             BigDecimal balanceAfterCommission = account.getBalance().subtract(account.getTransactionCommission());
             if (balanceAfterCommission.compareTo(BigDecimal.ZERO) < 0) {
-                return Mono.error(new RuntimeException("Insufficient balance to pay transaction commission")
-                );
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient balance to pay transaction commission"));
+
             }
             account.setBalance(balanceAfterCommission);
         }
