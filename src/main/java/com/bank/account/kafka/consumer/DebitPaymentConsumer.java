@@ -21,7 +21,8 @@ public class DebitPaymentConsumer {
 
     @KafkaListener(
             topics = "debit-payment-topic",
-            groupId = "account-group"
+            groupId = "account-group",
+            containerFactory = "debitPaymentKafkaListenerContainerFactory"
     )
     public void consume(DebitPaymentEvent event) {
 

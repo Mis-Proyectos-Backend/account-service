@@ -17,7 +17,7 @@ public class AccountTransferConsumer {
 
     @KafkaListener(
             topics = "account-transfer-topic",
-            groupId = "account-group"
+            containerFactory = "accountTransferKafkaListenerContainerFactory"
     )
     public void consume(AccountTransferEvent event) {
 

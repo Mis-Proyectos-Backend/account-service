@@ -14,7 +14,7 @@ import java.util.Map;
 
 
 @Configuration
-public class KafkaConsumerConfig {
+public class DebitPaymentConsumerConfig {
 
 
     @Bean
@@ -35,7 +35,7 @@ public class KafkaConsumerConfig {
 
         props.put(
                 org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG,
-                "movement-group"
+                "account-group"
         );
 
 
@@ -47,9 +47,9 @@ public class KafkaConsumerConfig {
     }
 
 
-    @Bean
+    @Bean(name = "debitPaymentKafkaListenerContainerFactory")
     public ConcurrentKafkaListenerContainerFactory<String, DebitPaymentEvent>
-    kafkaListenerContainerFactory() {
+    debitPaymentKafkaListenerContainerFactory() {
 
 
         ConcurrentKafkaListenerContainerFactory<String, DebitPaymentEvent> factory =
