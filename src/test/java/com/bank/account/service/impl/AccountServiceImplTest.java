@@ -6,6 +6,7 @@ import com.bank.account.client.dto.Credit;
 import com.bank.account.client.dto.Customer;
 import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.config.AccountProperties;
+import com.bank.account.dto.TransferRequest;
 import com.bank.account.enums.*;
 import com.bank.account.event.AccountMovementEvent;
 import com.bank.account.model.Account;
@@ -414,12 +415,13 @@ class AccountServiceImplTest {
 
     @Test
     void transfer_whenAmountIsZero_shouldFail() {
+        TransferRequest request = TransferRequest.builder()
+                .sourceAccountId("a1")
+                .destinationAccountId("a2")
+                .amount(BigDecimal.ZERO)
+                .build();
         StepVerifier.create(
-                        service.transfer(
-                                "a1",
-                                "a2",
-                                BigDecimal.ZERO
-                        )
+                        service.transfer(request)
                 )
                 .expectError(IllegalArgumentException.class)
                 .verify();
@@ -437,13 +439,13 @@ class AccountServiceImplTest {
         when(repository.findById("a2"))
                 .thenReturn(Mono.empty());
 
+        TransferRequest request = TransferRequest.builder()
+                .sourceAccountId("a1")
+                .destinationAccountId("a2")
+                .amount(BigDecimal.valueOf(50))
+                .build();
         StepVerifier.create(
-                        service.transfer(
-                                "a1",
-                                "a2",
-                                BigDecimal.valueOf(50)
-                        )
-                )
+                service.transfer(request))
                 .expectError()
                 .verify();
     }
@@ -463,16 +465,17 @@ class AccountServiceImplTest {
         when(repository.findById("a2"))
                 .thenReturn(Mono.empty());
 
+
+        TransferRequest request = TransferRequest.builder()
+                .sourceAccountId("a1")
+                .destinationAccountId("a2")
+                .amount(BigDecimal.valueOf(50))
+                .build();
         StepVerifier.create(
-                        service.transfer(
-                                "a1",
-                                "a2",
-                                BigDecimal.valueOf(50)
-                        )
-                )
+                        service.transfer(request))
                 .expectError()
                 .verify();
-    }
+}
 
 
 
@@ -500,13 +503,13 @@ class AccountServiceImplTest {
         when(repository.findById("a2"))
                 .thenReturn(Mono.just(destination));
 
+        TransferRequest request = TransferRequest.builder()
+                .sourceAccountId("a1")
+                .destinationAccountId("a2")
+                .amount(BigDecimal.valueOf(50))
+                .build();
         StepVerifier.create(
-                        service.transfer(
-                                "a1",
-                                "a2",
-                                BigDecimal.valueOf(50)
-                        )
-                )
+                        service.transfer(request))
                 .expectError()
                 .verify();
     }
@@ -540,13 +543,13 @@ class AccountServiceImplTest {
         when(repository.save(any(Account.class)))
                 .thenAnswer(i -> Mono.just(i.getArgument(0)));
 
+        TransferRequest request = TransferRequest.builder()
+                .sourceAccountId("a1")
+                .destinationAccountId("a2")
+                .amount(BigDecimal.valueOf(30))
+                .build();
         StepVerifier.create(
-                        service.transfer(
-                                "a1",
-                                "a2",
-                                BigDecimal.valueOf(30)
-                        )
-                )
+                        service.transfer(request))
                 .verifyComplete();
 
         verify(repository, times(2))

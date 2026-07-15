@@ -1,5 +1,6 @@
 package com.bank.account.dto;
 
+import com.bank.account.enums.PaymentMethod;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,4 +19,6 @@ public class TransferRequest {
     private String destinationAccountId;
 
     private BigDecimal amount;
+
+    private PaymentMethod paymentMethod;
 }

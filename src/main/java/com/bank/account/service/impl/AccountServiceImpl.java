@@ -5,6 +5,7 @@ import com.bank.account.client.CustomerClient;
 import com.bank.account.client.dto.Customer;
 import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.config.AccountProperties;
+import com.bank.account.dto.TransferRequest;
 import com.bank.account.enums.*;
 import com.bank.account.model.Account;
 import com.bank.account.repository.AccountRepository;
@@ -152,20 +153,22 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public Mono<Void> transfer(String fromAccountId, String toAccountId, BigDecimal amount) {
+    public Mono<Void> transfer(TransferRequest request) {
+        BigDecimal amount = request.getAmount();
+        PaymentMethod paymentMethod = request.getPaymentMethod()!= null ?request.getPaymentMethod() : PaymentMethod.ACCOUNT;
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             return Mono.error(new IllegalArgumentException("El importe debe ser mayor que cero."));
         }
-        Mono<Account> fromAccountMono = repository.findById(fromAccountId)
+        Mono<Account> fromAccountMono = repository.findById(request.getSourceAccountId())
                 // Cambio: NOT_FOUND
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "No se encontró la cuenta de origen.")));
-        Mono<Account> toAccountMono = repository.findById(toAccountId)
+        Mono<Account> toAccountMono = repository.findById(request.getDestinationAccountId())
                 // Cambio: NOT_FOUND
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Cuenta de destino no encontrada")));
 
         return Mono.zip(fromAccountMono, toAccountMono)
                 .flatMap(accounts -> validateTransfer(accounts, amount))
-                .flatMap(accounts -> executeTransfer(accounts, amount));
+                .flatMap(accounts -> executeTransfer(accounts, amount, paymentMethod));
     }
 
     @Override
@@ -290,7 +293,7 @@ public class AccountServiceImpl implements AccountService {
         return validateFixedTermAccount(from).then(validateFixedTermAccount(to)).thenReturn(accounts);
     }
 
-    private Mono<Void> executeTransfer(Tuple2<Account, Account> accounts, BigDecimal amount) {
+    private Mono<Void> executeTransfer(Tuple2<Account, Account> accounts, BigDecimal amount, PaymentMethod paymentMethod) {
         Account from = accounts.getT1();
         Account to = accounts.getT2();
         from.setBalance(from.getBalance().subtract(amount));
@@ -300,8 +303,8 @@ public class AccountServiceImpl implements AccountService {
         return repository.save(from)
                 .flatMap(savedFrom -> repository.save(to)
                         .flatMap(savedTo -> Mono.when(
-                                saveMovement(savedFrom, MovementType.WITHDRAW, PaymentMethod.TRANSFER, amount),
-                                saveMovement(savedTo, MovementType.DEPOSIT, PaymentMethod.TRANSFER, amount)
+                                saveMovement(savedFrom, MovementType.WITHDRAW, paymentMethod, amount),
+                                saveMovement(savedTo, MovementType.DEPOSIT, paymentMethod, amount)
                         ).then(
                                 Mono.when(
                                         redisTemplate.delete("account:" + savedFrom.getId()),

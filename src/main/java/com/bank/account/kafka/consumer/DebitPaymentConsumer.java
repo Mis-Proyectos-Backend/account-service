@@ -38,7 +38,7 @@ public class DebitPaymentConsumer {
                 .doOnSuccess(account ->
                         System.out.println(
                                 "Debit payment processed: "
-                                        + account.getId()
+                                        + account.getId() + " " + request.getPaymentMethod()
                         )
                 )
                 .doOnError(error ->

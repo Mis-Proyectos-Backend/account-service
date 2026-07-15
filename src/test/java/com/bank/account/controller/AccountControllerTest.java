@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 
@@ -212,16 +213,14 @@ class AccountControllerTest {
 
     @Test
     void transfer_shouldReturnOk() {
-        TransferRequest request = new TransferRequest();
-        request.setSourceAccountId("a1");
-        request.setDestinationAccountId("a2");
-        request.setAmount(BigDecimal.valueOf(200));
 
-        when(service.transfer(
-                "a1",
-                "a2",
-                BigDecimal.valueOf(200)))
-                .thenReturn(Mono.empty());
+        TransferRequest request = TransferRequest.builder()
+                .sourceAccountId("a1")
+                .destinationAccountId("a2")
+                .amount(BigDecimal.valueOf(200))
+                .build();
+
+        when(service.transfer(request)).thenReturn(Mono.empty());
 
         webTestClient.post()
                 .uri("/accounts/transfer")
@@ -229,10 +228,7 @@ class AccountControllerTest {
                 .exchange()
                 .expectStatus().isOk();
 
-        verify(service).transfer(
-                "a1",
-                "a2",
-                BigDecimal.valueOf(200));
+        verify(service).transfer(request);
     }
 
     @Test
@@ -243,7 +239,7 @@ class AccountControllerTest {
         request.setDestinationAccountId("a2");
         request.setAmount(BigDecimal.valueOf(200));
 
-        when(service.transfer(any(), any(), any()))
+        when(service.transfer(any()))
                 .thenReturn(Mono.error(new RuntimeException("Insufficient funds")));
 
         webTestClient.post()

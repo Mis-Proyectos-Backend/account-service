@@ -70,11 +70,8 @@ public class AccountController {
 
     @PostMapping("/transfer")
     public Mono<ResponseEntity<Void>> transfer(@RequestBody TransferRequest request) {
-        return service.transfer(
-                request.getSourceAccountId(),
-                request.getDestinationAccountId(),
-                request.getAmount()
-        ).thenReturn(ResponseEntity.ok().build());
+        return service.transfer(request)
+                .thenReturn(ResponseEntity.ok().build());
     }
 
     @GetMapping("/customer/{customerId}")
