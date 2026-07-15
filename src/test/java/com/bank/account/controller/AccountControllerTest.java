@@ -253,4 +253,26 @@ class AccountControllerTest {
                 .expectStatus().is5xxServerError();
     }
 
+    @Test
+    void getByCustomerId_shouldReturnAccount() {
+        Flux<Account> accounts = Flux.just(Account.builder()
+                .id("a1")
+                .customerId("c1")
+                .type(AccountType.SAVINGS)
+                .balance(BigDecimal.valueOf(100))
+                .build());
+
+        when(service.getByCustomerId("c1"))
+                .thenReturn(accounts);
+
+        webTestClient.get()
+                .uri("/accounts/customer/c1")
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody()
+                .jsonPath("$[0].id")
+                .isEqualTo("a1");
+    }
+
 }

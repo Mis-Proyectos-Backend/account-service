@@ -1,4 +1,4 @@
-package com.bank.account.producer;
+package com.bank.account.kafka.producer;
 
 import com.bank.account.event.AccountMovementEvent;
 import lombok.RequiredArgsConstructor;

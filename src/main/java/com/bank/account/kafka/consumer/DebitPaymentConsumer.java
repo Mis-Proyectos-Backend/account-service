@@ -1,4 +1,4 @@
-package com.bank.account.consumer;
+package com.bank.account.kafka.consumer;
 
 import com.bank.account.client.dto.WithdrawRequest;
 import com.bank.account.enums.PaymentMethod;

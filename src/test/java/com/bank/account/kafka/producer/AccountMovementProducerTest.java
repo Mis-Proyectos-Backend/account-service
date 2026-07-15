@@ -1,8 +1,9 @@
-package com.bank.account.producer;
+package com.bank.account.kafka.producer;
 
 import com.bank.account.enums.AccountType;
 import com.bank.account.enums.MovementType;
 import com.bank.account.event.AccountMovementEvent;
+import com.bank.account.kafka.producer.AccountMovementProducer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;

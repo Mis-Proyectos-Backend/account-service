@@ -59,12 +59,12 @@ public class AccountController {
 
         return service.withdraw(id, request)
                 .map(ResponseEntity::ok);
-
     }
 
     @DeleteMapping("/{id}")
-    public Mono<Void> delete(@PathVariable String id) {
-        return service.delete(id);
+    public Mono<ResponseEntity<Void>> delete(@PathVariable String id) {
+        return service.delete(id)
+                .thenReturn(ResponseEntity.ok().build());
     }
 
 
@@ -75,6 +75,11 @@ public class AccountController {
                 request.getDestinationAccountId(),
                 request.getAmount()
         ).thenReturn(ResponseEntity.ok().build());
+    }
+
+    @GetMapping("/customer/{customerId}")
+    public Flux<Account> getBycustomerId(@PathVariable String customerId) {
+        return service.getByCustomerId(customerId);
     }
 
 }

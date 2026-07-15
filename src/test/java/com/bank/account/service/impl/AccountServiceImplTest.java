@@ -9,7 +9,7 @@ import com.bank.account.config.AccountProperties;
 import com.bank.account.enums.*;
 import com.bank.account.event.AccountMovementEvent;
 import com.bank.account.model.Account;
-import com.bank.account.producer.AccountMovementProducer;
+import com.bank.account.kafka.producer.AccountMovementProducer;
 import com.bank.account.repository.AccountRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -21,12 +21,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.data.redis.core.ReactiveValueOperations;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -646,16 +650,22 @@ class AccountServiceImplTest {
         verify(valueOperations).get("account:a1");
     }
 
+
     @Test
     void getById_whenAccountNotFound_shouldThrowException() {
+
         when(valueOperations.get("account:a1"))
                 .thenReturn(Mono.empty());
+
         when(repository.findById("a1"))
                 .thenReturn(Mono.empty());
+
         StepVerifier.create(service.getById("a1"))
                 .expectErrorMatches(ex ->
-                        ex instanceof RuntimeException &&
-                                ex.getMessage().equals("Cuenta no encontrada"))
+                        ex instanceof ResponseStatusException response &&
+                                response.getStatusCode().equals(HttpStatus.NOT_FOUND) &&
+                                "Cuenta no encontrada".equals(response.getReason())
+                )
                 .verify();
     }
 
@@ -963,7 +973,9 @@ class AccountServiceImplTest {
                 .thenReturn(Mono.just(true));
 
         StepVerifier.create(service.create(account))
-                .expectErrorMessage("Customer has overdue credit debt")
+                .expectErrorMatches(error ->
+                        error.getMessage()
+                                .contains("El cliente tiene deudas vencidas"))
                 .verify();
 
         verify(repository, never()).save(any());

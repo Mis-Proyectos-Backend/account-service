@@ -28,6 +28,7 @@ public class CreditClient {
     public Flux<Credit> fallbackCredits(String customerId, Throwable ex) {
         return Flux.empty();
     }
+
     @CircuitBreaker(name = "creditService", fallbackMethod = "fallbackHasOverdueDebt")
     public Mono<Boolean> hasOverdueDebt(String customerId) {
 
