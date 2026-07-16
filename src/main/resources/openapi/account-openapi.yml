@@ -18,6 +18,13 @@ paths:
         schema:
           type: string
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
           content:
@@ -41,6 +48,13 @@ paths:
               $ref: "#/components/schemas/Account"
         required: true
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
           content:
@@ -58,6 +72,13 @@ paths:
         schema:
           type: string
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
   /accounts:
@@ -66,6 +87,13 @@ paths:
       - account-controller
       operationId: getAll
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
           content:
@@ -85,6 +113,13 @@ paths:
               $ref: "#/components/schemas/Account"
         required: true
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
           content:
@@ -102,12 +137,20 @@ paths:
         required: true
         schema:
           type: string
-      - name: amount
-        in: query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawRequest"
         required: true
-        schema:
-          type: number
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
           content:
@@ -131,24 +174,59 @@ paths:
         schema:
           type: number
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/Account"
-  /movements/account/{accountId}:
+  /accounts/transfer:
+    post:
+      tags:
+      - account-controller
+      operationId: transfer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferRequest"
+        required: true
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
+        "200":
+          description: OK
+  /accounts/customer/{customerId}:
     get:
       tags:
-      - movement-controller
-      operationId: getMovements
+      - account-controller
+      operationId: getBycustomerId
       parameters:
-      - name: accountId
+      - name: customerId
         in: path
         required: true
         schema:
           type: string
       responses:
+        "400":
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
         "200":
           description: OK
           content:
@@ -156,7 +234,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Movement"
+                  $ref: "#/components/schemas/Account"
 components:
   schemas:
     Account:
@@ -187,22 +265,39 @@ components:
           format: int32
         transactionCommission:
           type: number
-    Movement:
+        transactionCount:
+          type: integer
+          format: int32
+    WithdrawRequest:
       type: object
       properties:
-        id:
-          type: string
-        accountId:
-          type: string
-        movementType:
-          type: string
-          enum:
-          - DEPOSIT
-          - WITHDRAW
         amount:
           type: number
-        balanceAfterMovement:
-          type: number
-        movementDate:
+        paymentMethod:
           type: string
-          format: date-time
+          enum:
+          - ACCOUNT
+          - CREDIT_PAYMENT
+          - DEBIT_CARD
+          - TRANSFER
+          - YANKI
+      required:
+      - amount
+      - paymentMethod
+    TransferRequest:
+      type: object
+      properties:
+        sourceAccountId:
+          type: string
+        destinationAccountId:
+          type: string
+        amount:
+          type: number
+        paymentMethod:
+          type: string
+          enum:
+          - ACCOUNT
+          - CREDIT_PAYMENT
+          - DEBIT_CARD
+          - TRANSFER
+          - YANKI
