@@ -180,13 +180,14 @@ public class AccountServiceImpl implements AccountService {
     }
 
     private Mono<Account> validateAndSave(Customer customer, Account account) {
-        if (customer.getCustomerType() != com.bank.account.enums.CustomerType.PERSONAL && customer.getCustomerType() != com.bank.account.enums.CustomerType.BUSINESS) {
+        if (customer.getCustomerType() != CustomerType.PERSONAL && customer.getCustomerType() != CustomerType.BUSINESS) {
             return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tipo de cliente no válido"));
         }
-        boolean isBusiness = customer.getCustomerType() == com.bank.account.enums.CustomerType.BUSINESS;
+        boolean isBusiness = customer.getCustomerType() == CustomerType.BUSINESS;
 
         if (!isBusiness) {
             if (account.getType() == AccountType.FIXED_TERM) {
+                account.setMovementDay(accountProperties.getFixedTerm().getMovementDay());
                 if (account.getMovementDay() == null || account.getMovementDay() < 1 || account.getMovementDay() > 31) {
                     return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "El día del movimiento debe estar entre 1 y 31."));
                 }

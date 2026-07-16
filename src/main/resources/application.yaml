@@ -75,3 +75,4 @@ bank:
     fixed-term:
       free-transactions: 1
       transaction-commission: 5.00
+      movement-day: 15

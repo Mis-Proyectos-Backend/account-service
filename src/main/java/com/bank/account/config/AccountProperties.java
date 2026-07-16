@@ -28,6 +28,8 @@ public class AccountProperties {
 
         private BigDecimal transactionCommission;
 
+        private Integer movementDay;
+
     }
 
     public AccountConfig getByType(AccountType type) {

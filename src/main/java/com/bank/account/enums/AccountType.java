@@ -1,7 +1,7 @@
 package com.bank.account.enums;
 
 public enum AccountType {
-    SAVINGS,
-    CHECKING,
-    FIXED_TERM
+    SAVINGS, //Ahorros
+    CHECKING, //Corriente
+    FIXED_TERM // Plazo fijo
 }
